@@ -81,18 +81,41 @@ const TIMEOUT_MS = 60_000;
  * If HF_SPACE_URL is not set, returns a configuration guide.
  * Never throws — all errors are returned as user-friendly content.
  */
+/**
+ * Strip all leading/trailing whitespace including Unicode variants
+ * (non-breaking space \u00A0, zero-width space \u200B, BOM \uFEFF, etc.)
+ * that `.trim()` alone does not remove.
+ */
+function sanitizeEnvString(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  const cleaned = value.replace(/^[\s\u00A0\u200B\u200C\u200D\uFEFF\r\n]+|[\s\u00A0\u200B\u200C\u200D\uFEFF\r\n]+$/g, "");
+  return cleaned || undefined;
+}
+
 export async function runPlanner(
   userMessage: string,
   history: PlannerMessage[] = [],
 ): Promise<PlannerResult> {
-  const spaceUrl = process.env["HF_SPACE_URL"]?.trim();
-  const apiKey = process.env["HF_API_KEY"]?.trim();
+  const spaceUrl = sanitizeEnvString(process.env["HF_SPACE_URL"]);
+  const apiKey = sanitizeEnvString(process.env["HF_API_KEY"]);
 
   if (!spaceUrl) {
     console.warn("[Planner] HF_SPACE_URL is not set — returning configuration guide");
     return {
       content: buildConfigurationGuide(userMessage),
       model: "fallback",
+    };
+  }
+
+  // Validate URL before fetch — catch invisible-character issues early
+  try {
+    new URL(spaceUrl);
+  } catch {
+    const charCodes = [...spaceUrl.slice(0, 40)].map((c) => c.charCodeAt(0));
+    console.error("[Planner] HF_SPACE_URL is not a valid URL. Char codes:", charCodes);
+    return {
+      content: `⚠️ HF_SPACE_URL is not a valid URL.\n\nStored value starts with: \`${spaceUrl.slice(0, 80)}\`\n\nPlease re-enter the URL in Replit Secrets — make sure to copy only the URL itself with no surrounding quotes or extra characters.`,
+      error: "invalid_url",
     };
   }
 
@@ -105,6 +128,8 @@ export async function runPlanner(
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  console.log("[Planner] Calling HF endpoint:", spaceUrl.slice(0, 80));
 
   try {
     const headers: Record<string, string> = {
