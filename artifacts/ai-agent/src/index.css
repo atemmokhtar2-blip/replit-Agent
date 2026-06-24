@@ -112,6 +112,16 @@
   --opaque-button-border-intensity: -8;
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
+
+  /* ── Responsive layout tokens ──────────────────────────────────────────── */
+  --sidebar-width: 16rem;          /* 256px / w-64 */
+  --header-height: 3.5rem;         /* 56px  / h-14 */
+
+  /* Safe area insets — populated by env() on supported devices */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
 }
 
 .dark {
@@ -158,10 +168,102 @@
 }
 
 @layer base {
+  /* ── Reset & base ──────────────────────────────────────────────────────── */
   * {
     @apply border-border;
+    box-sizing: border-box;
   }
+
+  html {
+    /* Prevent iOS text size adjust after orientation change */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+    /* Smooth scrolling */
+    scroll-behavior: smooth;
+  }
+
   body {
     @apply font-sans antialiased bg-background text-foreground;
+    /* Dynamic viewport height — correctly handles mobile browser chrome */
+    min-height: 100dvh;
+    /* Prevent horizontal overflow at the document level */
+    overflow-x: hidden;
+  }
+
+  /* ── App root — fills dynamic viewport exactly ─────────────────────────── */
+  #root {
+    height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* ── Prevent iOS form-input zoom (requires ≥ 16px font size) ──────────── */
+  input,
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+
+  /* ── Touch targets — improve tap accuracy ──────────────────────────────── */
+  button,
+  [role="button"],
+  a,
+  label,
+  select {
+    touch-action: manipulation;
+  }
+
+  /* ── Scrollbar styling (Webkit) ────────────────────────────────────────── */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.4);
+  }
+
+  /* ── Safe-area padding helpers ─────────────────────────────────────────── */
+  .safe-top    { padding-top:    var(--safe-top); }
+  .safe-right  { padding-right:  var(--safe-right); }
+  .safe-bottom { padding-bottom: var(--safe-bottom); }
+  .safe-left   { padding-left:   var(--safe-left); }
+
+  /* ── Page wrapper — used by all authenticated pages ───────────────────── */
+  .page-content {
+    @apply flex-1 w-full min-w-0 overflow-y-auto;
+    /* Consistent page padding — mobile-first */
+    padding: 1rem;
+  }
+  @media (min-width: 640px) {
+    .page-content {
+      padding: 1.5rem;
+    }
+  }
+  @media (min-width: 1024px) {
+    .page-content {
+      padding: 2rem;
+    }
+  }
+
+  /* ── Responsive page header — title + action row ──────────────────────── */
+  .page-header {
+    @apply flex flex-wrap items-start justify-between gap-3 mb-6;
+  }
+  .page-title {
+    @apply text-2xl font-bold tracking-tight md:text-3xl;
+  }
+
+  /* ── Full-height flex column (for chat/workspace layouts) ─────────────── */
+  .h-fill {
+    height: 100%;
+    min-height: 0;
   }
 }
