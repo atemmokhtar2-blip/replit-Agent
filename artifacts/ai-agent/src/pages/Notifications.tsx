@@ -15,7 +15,7 @@ export default function Notifications() {
 
   const handleMarkRead = (id: string) => {
     markReadMutation.mutate(
-      { id },
+      { notificationId: id },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListNotificationsQueryKey() });

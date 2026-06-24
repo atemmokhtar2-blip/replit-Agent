@@ -24,14 +24,14 @@ export function ProjectActionsDropdown({ project }: { project: Project }) {
     e.preventDefault();
     if (!newName.trim()) return;
     updateMutation.mutate(
-      { id: project.id, data: { name: newName } },
+      { projectId: project.id, data: { name: newName } },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
           toast({ title: "Project renamed" });
           setRenameOpen(false);
         },
-        onError: (err) => toast({ variant: "destructive", title: "Error", description: err.error })
+        onError: (err) => toast({ variant: "destructive", title: "Error", description: (err as { data?: { error?: string } }).data?.error || err.message })
       }
     );
   };
@@ -39,13 +39,13 @@ export function ProjectActionsDropdown({ project }: { project: Project }) {
   const handleArchive = () => {
     if (!confirm("Archive this project?")) return;
     archiveMutation.mutate(
-      { id: project.id },
+      { projectId: project.id },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
           toast({ title: "Project archived" });
         },
-        onError: (err) => toast({ variant: "destructive", title: "Error", description: err.error })
+        onError: (err) => toast({ variant: "destructive", title: "Error", description: (err as { data?: { error?: string } }).data?.error || err.message })
       }
     );
   };
@@ -53,13 +53,13 @@ export function ProjectActionsDropdown({ project }: { project: Project }) {
   const handleDelete = () => {
     if (!confirm("Delete this project permanently?")) return;
     deleteMutation.mutate(
-      { id: project.id },
+      { projectId: project.id },
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListProjectsQueryKey() });
           toast({ title: "Project deleted" });
         },
-        onError: (err) => toast({ variant: "destructive", title: "Error", description: err.error })
+        onError: (err) => toast({ variant: "destructive", title: "Error", description: (err as { data?: { error?: string } }).data?.error || err.message })
       }
     );
   };

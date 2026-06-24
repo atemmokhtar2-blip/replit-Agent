@@ -81,11 +81,11 @@ export default function Dashboard() {
                   <Skeleton className="h-12 w-full" />
                   <Skeleton className="h-12 w-full" />
                 </div>
-              ) : recent?.items?.length === 0 ? (
+              ) : (recent?.length ?? 0) === 0 ? (
                 <p className="text-sm text-muted-foreground">No recent projects. Get started by creating one.</p>
               ) : (
                 <div className="space-y-2">
-                  {recent?.items.map(project => (
+                  {recent?.map((project) => (
                     <Link key={project.id} href={`/projects/${project.id}`}>
                       <div className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-muted/50 cursor-pointer transition-colors">
                         <div className="flex items-center gap-3">

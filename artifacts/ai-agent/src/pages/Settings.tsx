@@ -136,7 +136,7 @@ function AIProvidersTab() {
     );
   };
 
-  const providers = myProviders?.items ?? [];
+  const providers = myProviders ?? [];
   const availableList = available ?? [];
 
   return (
@@ -333,7 +333,7 @@ export default function Settings() {
       { data },
       {
         onSuccess: () => toast({ title: "Profile updated" }),
-        onError: (err) => toast({ variant: "destructive", title: "Error", description: err.error }),
+        onError: (err) => toast({ variant: "destructive", title: "Error", description: (err as { data?: { error?: string } }).data?.error || err.message }),
       }
     );
   };
@@ -346,7 +346,7 @@ export default function Settings() {
           toast({ title: "Password changed successfully" });
           securityForm.reset();
         },
-        onError: (err) => toast({ variant: "destructive", title: "Error", description: err.error }),
+        onError: (err) => toast({ variant: "destructive", title: "Error", description: (err as { data?: { error?: string } }).data?.error || err.message }),
       }
     );
   };

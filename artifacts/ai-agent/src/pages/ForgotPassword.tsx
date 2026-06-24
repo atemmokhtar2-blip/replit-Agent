@@ -37,7 +37,7 @@ export default function ForgotPassword() {
           toast({
             variant: "destructive",
             title: "Failed",
-            description: err.error || "An error occurred.",
+            description: (err as { data?: { error?: string } }).data?.error || "An error occurred.",
           });
         },
       }

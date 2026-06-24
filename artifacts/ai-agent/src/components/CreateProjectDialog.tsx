@@ -45,7 +45,7 @@ export function CreateProjectDialog() {
           form.reset();
         },
         onError: (err) => {
-          toast({ variant: "destructive", title: "Error", description: err.error });
+          toast({ variant: "destructive", title: "Error", description: (err as { data?: { error?: string } }).data?.error || err.message });
         }
       }
     );

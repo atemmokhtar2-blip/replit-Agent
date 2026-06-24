@@ -1,0 +1,5 @@
+- [Vite build PORT fix](vite-build-port-fix.md) — vite.config.ts throws on missing PORT/BASE_PATH; must guard with isBuild flag during CI builds.
+- [Generated API error shape](api-error-shape.md) — ApiError stores response body in .data not .error; cast as `{ data?: { error?: string } }` to access API errors.
+- [Orval mutation variable names](orval-mutation-vars.md) — generated hooks use `projectId` not `id`; always match the underlying function's param name.
+- [TanStack Query v5 queryKey required](tanstack-querykey-required.md) — UseQueryOptions in v5 requires queryKey; pass it or omit the query option entirely when only using enabled/staleTime.
+- [List hooks return arrays not list objects](list-hooks-arrays.md) — getRecentProjects and listMyProviders return T[] directly, not { items: T[] }; only paginated endpoints return NotificationList/etc with .items.

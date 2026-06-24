@@ -47,7 +47,7 @@ export default function Login() {
           toast({
             variant: "destructive",
             title: "Login Failed",
-            description: err.error || "Please check your credentials and try again.",
+            description: (err as { data?: { error?: string } }).data?.error || "Please check your credentials and try again.",
           });
         },
       }

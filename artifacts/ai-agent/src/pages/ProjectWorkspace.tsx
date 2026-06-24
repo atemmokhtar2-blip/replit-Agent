@@ -24,10 +24,7 @@ function AIChatPanel({ projectId }: { projectId: string }) {
   const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const { data: conversations } = useListConversations(
-    { project_id: projectId },
-    { query: { staleTime: 30_000 } }
-  );
+  const { data: conversations } = useListConversations({ project_id: projectId });
 
   const createConversation = useCreateConversation();
   const sendMessage = useSendMessage();
@@ -36,7 +33,7 @@ function AIChatPanel({ projectId }: { projectId: string }) {
 
   const { data: messagesData } = useListMessages(
     activeConversationId ?? "",
-    { query: { enabled: !!activeConversationId, staleTime: 5_000 } }
+    { query: { enabled: !!activeConversationId, queryKey: getListMessagesQueryKey(activeConversationId ?? "") } }
   );
 
   const messages = messagesData?.items ?? [];

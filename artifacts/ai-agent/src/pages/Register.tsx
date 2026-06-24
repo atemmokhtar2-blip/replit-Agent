@@ -47,7 +47,7 @@ export default function Register() {
           toast({
             variant: "destructive",
             title: "Registration Failed",
-            description: err.error || "An error occurred.",
+            description: (err as { data?: { error?: string } }).data?.error || "An error occurred.",
           });
         },
       }
