@@ -3,12 +3,12 @@ import {
   useGetProject,
   getGetProjectQueryKey,
   useCreateConversation,
-  useSendMessage,
   useListConversations,
   useListMessages,
   getListMessagesQueryKey,
 } from "@workspace/api-client-react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, useMutation } from "@tanstack/react-query";
+import { sendToPlannerEngine } from "@/lib/planner-api";
 import { useParams, Link } from "wouter";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { Button } from "@/components/ui/button";
@@ -22,13 +22,15 @@ function AIChatPanel({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient();
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [input, setInput] = useState("");
-  const [isSending, setIsSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const { data: conversations } = useListConversations({ project_id: projectId });
 
   const createConversation = useCreateConversation();
-  const sendMessage = useSendMessage();
+  const plannerMutation = useMutation({
+    mutationFn: ({ message, conversationId }: { message: string; conversationId: string }) =>
+      sendToPlannerEngine(message, conversationId),
+  });
 
   const activeConversationId =
     conversationId ?? conversations?.items?.[0]?.id ?? null;
@@ -67,15 +69,14 @@ function AIChatPanel({ projectId }: { projectId: string }) {
 
   const handleSend = async () => {
     const content = input.trim();
-    if (!content || isSending) return;
+    if (!content || plannerMutation.isPending) return;
     setInput("");
-    setIsSending(true);
 
     try {
       const convId = await ensureConversation();
       await new Promise<void>((resolve, reject) => {
-        sendMessage.mutate(
-          { conversationId: convId, data: { content } },
+        plannerMutation.mutate(
+          { message: content, conversationId: convId },
           {
             onSuccess: () => {
               queryClient.invalidateQueries({
@@ -89,8 +90,6 @@ function AIChatPanel({ projectId }: { projectId: string }) {
       });
     } catch {
       // handled by mutation
-    } finally {
-      setIsSending(false);
     }
   };
 
@@ -146,7 +145,7 @@ function AIChatPanel({ projectId }: { projectId: string }) {
             )}
           </div>
         ))}
-        {isSending && (
+        {plannerMutation.isPending && (
           <div className="flex gap-2">
             <div className="mt-0.5 h-6 w-6 flex-shrink-0 rounded-full bg-primary/10 flex items-center justify-center">
               <Bot className="h-3 w-3 text-primary" />
@@ -165,7 +164,7 @@ function AIChatPanel({ projectId }: { projectId: string }) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          disabled={isSending}
+          disabled={plannerMutation.isPending}
           className="flex h-9 w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm transition-colors placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
           placeholder="Ask me to build something..."
         />
@@ -173,9 +172,9 @@ function AIChatPanel({ projectId }: { projectId: string }) {
           size="icon"
           className="h-9 w-9 flex-shrink-0"
           onClick={handleSend}
-          disabled={isSending || !input.trim()}
+          disabled={plannerMutation.isPending || !input.trim()}
         >
-          {isSending ? (
+          {plannerMutation.isPending ? (
             <Loader2 className="h-4 w-4 animate-spin" />
           ) : (
             <Send className="h-4 w-4" />
