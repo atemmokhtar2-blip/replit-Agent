@@ -21,6 +21,7 @@ import ProjectWorkspace from "@/pages/ProjectWorkspace";
 import Settings from "@/pages/Settings";
 import Notifications from "@/pages/Notifications";
 import Admin from "@/pages/Admin";
+import ChatWorkspace from "@/pages/ChatWorkspace";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -40,6 +41,9 @@ function Router() {
       <Route path="/reset-password" component={ResetPassword} />
       
       {/* Protected Routes */}
+      <Route path="/chat">
+        <ProtectedRoute><AppLayout><ChatWorkspace /></AppLayout></ProtectedRoute>
+      </Route>
       <Route path="/dashboard">
         <ProtectedRoute><AppLayout><Dashboard /></AppLayout></ProtectedRoute>
       </Route>

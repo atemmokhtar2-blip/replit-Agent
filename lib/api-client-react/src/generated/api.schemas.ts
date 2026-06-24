@@ -317,6 +317,14 @@ export interface AIConversationInput {
   project_id?: string;
 }
 
+export interface AIConversationUpdate {
+  /**
+     * @minLength 1
+     * @maxLength 200
+     */
+  title: string;
+}
+
 export type AIMessageRole = typeof AIMessageRole[keyof typeof AIMessageRole];
 
 

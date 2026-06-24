@@ -40,7 +40,7 @@ export default function Register() {
             token_type: res.token_type
           });
           toast.success("Account created", { description: "Welcome to AI Agent." });
-          setLocation("/dashboard");
+          setLocation("/chat");
         },
         onError: (err) => {
           toast.error("Registration Failed", {

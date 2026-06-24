@@ -15,6 +15,7 @@ export * from './adminUserUpdateRole';
 export * from './aIConversation';
 export * from './aIConversationInput';
 export * from './aIConversationList';
+export * from './aIConversationUpdate';
 export * from './aIConversationWithMessages';
 export * from './aIMessage';
 export * from './aIMessageInput';

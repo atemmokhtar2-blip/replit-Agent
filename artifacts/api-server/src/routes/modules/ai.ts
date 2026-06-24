@@ -155,6 +155,26 @@ router.get("/conversations/:id", async (req, res) => {
   res.json({ ...fmtConversation(conversation), messages: messages.map(fmtMessage) });
 });
 
+// PATCH /ai/conversations/:id  (rename)
+const renameConversationSchema = z.object({
+  title: z.string().min(1).max(200),
+});
+
+router.patch("/conversations/:id", validateBody(renameConversationSchema), async (req, res) => {
+  const userId = req.user!.sub;
+  const { id } = req.params as Record<string, string>;
+  const { title } = req.body as z.infer<typeof renameConversationSchema>;
+
+  const [updated] = await db
+    .update(aiConversationsTable)
+    .set({ title, updatedAt: new Date() })
+    .where(and(eq(aiConversationsTable.id, id), eq(aiConversationsTable.userId, userId)))
+    .returning();
+
+  if (!updated) { res.status(404).json({ error: "Conversation not found" }); return; }
+  res.json(fmtConversation(updated));
+});
+
 // DELETE /ai/conversations/:id
 router.delete("/conversations/:id", async (req, res) => {
   const userId = req.user!.sub;

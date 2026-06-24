@@ -10,7 +10,8 @@ import {
   ShieldAlert, 
   Bell, 
   LogOut, 
-  Command 
+  Command,
+  MessageSquare,
 } from "lucide-react";
 
 export function AppLayout({ children }: { children: React.ReactNode }) {
@@ -28,6 +29,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   const navItems = [
+    { href: "/chat", label: "Chat", icon: MessageSquare },
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/projects", label: "Projects", icon: FolderGit2 },
     { href: "/notifications", label: "Notifications", icon: Bell },

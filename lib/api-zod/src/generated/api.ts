@@ -665,6 +665,32 @@ export const GetConversationResponse = zod.object({
 
 
 /**
+ * @summary Rename a conversation
+ */
+export const RenameConversationParams = zod.object({
+  "conversationId": zod.coerce.string()
+})
+
+export const renameConversationBodyTitleMax = 200;
+
+
+
+export const RenameConversationBody = zod.object({
+  "title": zod.string().min(1).max(renameConversationBodyTitleMax)
+})
+
+export const RenameConversationResponse = zod.object({
+  "id": zod.string(),
+  "project_id": zod.string().nullish(),
+  "user_id": zod.string(),
+  "title": zod.string().nullable(),
+  "status": zod.string(),
+  "created_at": zod.string(),
+  "updated_at": zod.string()
+})
+
+
+/**
  * @summary Delete a conversation
  */
 export const DeleteConversationParams = zod.object({

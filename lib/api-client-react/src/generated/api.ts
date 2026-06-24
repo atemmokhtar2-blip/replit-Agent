@@ -23,6 +23,7 @@ import type {
   AIConversation,
   AIConversationInput,
   AIConversationList,
+  AIConversationUpdate,
   AIConversationWithMessages,
   AIMessageInput,
   AIMessageList,
@@ -2571,6 +2572,78 @@ export function useGetConversation<TData = Awaited<ReturnType<typeof getConversa
 
 
 
+
+export const getRenameConversationUrl = (conversationId: string,) => {
+
+
+
+
+  return `/api/v1/ai/conversations/${conversationId}`
+}
+
+/**
+ * @summary Rename a conversation
+ */
+export const renameConversation = async (conversationId: string,
+    aIConversationUpdate: AIConversationUpdate, options?: RequestInit): Promise<AIConversation> => {
+
+  return customFetch<AIConversation>(getRenameConversationUrl(conversationId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(
+      aIConversationUpdate,)
+  }
+);}
+
+
+
+
+export const getRenameConversationMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof renameConversation>>, TError,{conversationId: string;data: BodyType<AIConversationUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof renameConversation>>, TError,{conversationId: string;data: BodyType<AIConversationUpdate>}, TContext> => {
+
+const mutationKey = ['renameConversation'];
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof renameConversation>>, {conversationId: string;data: BodyType<AIConversationUpdate>}> = (props) => {
+          const {conversationId,data} = props ?? {};
+
+          return  renameConversation(conversationId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RenameConversationMutationResult = NonNullable<Awaited<ReturnType<typeof renameConversation>>>
+    export type RenameConversationMutationBody = BodyType<AIConversationUpdate>
+    export type RenameConversationMutationError = ErrorType<ErrorResponse>
+
+    /**
+ * @summary Rename a conversation
+ */
+export const useRenameConversation = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof renameConversation>>, TError,{conversationId: string;data: BodyType<AIConversationUpdate>}, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof renameConversation>>,
+        TError,
+        {conversationId: string;data: BodyType<AIConversationUpdate>},
+        TContext
+      > => {
+      return useMutation(getRenameConversationMutationOptions(options));
+    }
 
 export const getDeleteConversationUrl = (conversationId: string,) => {
 
