@@ -17,7 +17,7 @@ import {
 import { eq, and, desc, sql } from "drizzle-orm";
 import { registry } from "@workspace/ai-provider";
 import type { ProviderConfig } from "@workspace/ai-provider";
-import { aiRouter, modelRegistry, TASK_TYPES } from "@workspace/ai-orchestrator";
+import { aiRouter, modelRegistry, TASK_TYPES, runPlanner } from "@workspace/ai-orchestrator";
 import { generateId } from "../../lib/auth.js";
 import { authenticate } from "../../middlewares/authenticate.js";
 import { validateBody } from "../../middlewares/validate.js";
@@ -315,6 +315,86 @@ router.post("/conversations/:id/messages", validateBody(sendMessageSchema), asyn
     .where(eq(aiConversationsTable.id, id));
 
   res.status(201).json({
+    user_message: fmtMessage(userMsg!),
+    assistant_message: fmtMessage(assistantMsg!),
+  });
+});
+
+// ─── Planner Engine ───────────────────────────────────────────────────────────
+
+const plannerSchema = z.object({
+  message: z.string().min(1).max(32000),
+  conversation_id: z.string().optional(),
+});
+
+// POST /ai/planner
+router.post("/planner", validateBody(plannerSchema), async (req, res) => {
+  const userId = req.user!.sub;
+  const { message, conversation_id } = req.body as z.infer<typeof plannerSchema>;
+
+  // Resolve or create conversation
+  let conversationId = conversation_id;
+  if (!conversationId) {
+    const [conv] = await db
+      .insert(aiConversationsTable)
+      .values({ id: generateId(), userId, title: "New conversation", status: "active" })
+      .returning();
+    conversationId = conv!.id;
+  } else {
+    const [existing] = await db
+      .select({ id: aiConversationsTable.id })
+      .from(aiConversationsTable)
+      .where(and(eq(aiConversationsTable.id, conversationId), eq(aiConversationsTable.userId, userId)))
+      .limit(1);
+    if (!existing) { res.status(404).json({ error: "Conversation not found" }); return; }
+  }
+
+  // Persist user message
+  const [userMsg] = await db
+    .insert(aiMessagesTable)
+    .values({ id: generateId(), conversationId, role: "user", content: message })
+    .returning();
+
+  // Load recent history for context (excluding the message we just inserted)
+  const rawHistory = await db
+    .select()
+    .from(aiMessagesTable)
+    .where(eq(aiMessagesTable.conversationId, conversationId))
+    .orderBy(aiMessagesTable.createdAt);
+
+  const historyForPlanner = rawHistory
+    .slice(0, -1)
+    .map((m) => ({ role: m.role, content: m.content }));
+
+  // Run planner engine — never throws; errors returned as friendly content
+  const result = await runPlanner(message, historyForPlanner);
+
+  // Persist planner response
+  const [assistantMsg] = await db
+    .insert(aiMessagesTable)
+    .values({
+      id: generateId(),
+      conversationId,
+      role: "assistant",
+      content: result.content,
+      metadata: {
+        module: "planner",
+        model: result.model ?? null,
+        error: result.error ?? null,
+      },
+    })
+    .returning();
+
+  // Bump conversation updatedAt
+  await db
+    .update(aiConversationsTable)
+    .set({ updatedAt: new Date() })
+    .where(eq(aiConversationsTable.id, conversationId));
+
+  res.status(201).json({
+    success: true,
+    plan: result.content,
+    conversation_id: conversationId,
     user_message: fmtMessage(userMsg!),
     assistant_message: fmtMessage(assistantMsg!),
   });

@@ -21,6 +21,7 @@ export { aiRouter } from "./router.js";
 export { modelRegistry, MODEL_CATALOG } from "./model-registry.js";
 export { taskClassifier, classifyTask } from "./task-classifier.js";
 export { TASK_TYPES } from "./types.js";
+export { runPlanner } from "./planner.js";
 
 export type {
   TaskType,
@@ -30,3 +31,4 @@ export type {
   OrchestrationRequest,
   OrchestrationResult,
 } from "./types.js";
+export type { PlannerMessage, PlannerResult } from "./planner.js";
