@@ -209,6 +209,30 @@ function classifyError(err: unknown, status?: number): ClassifiedError {
   };
 }
 
+// ── ASCII header validation ───────────────────────────────────────────────────
+
+/**
+ * Asserts that every value in a headers map is a valid HTTP ByteString:
+ * all characters must be in the range U+0000–U+00FF (Latin-1 / ISO-8859-1).
+ * Throws a descriptive error if any non-compliant character is found.
+ */
+function assertAsciiHeaders(headers: Record<string, string>): void {
+  console.log("[Planner] Headers validated");
+  for (const [name, value] of Object.entries(headers)) {
+    for (let i = 0; i < value.length; i++) {
+      const code = value.charCodeAt(i);
+      if (code > 255) {
+        throw new Error(
+          `Header "${name}" contains non-ByteString character at index ${i}: ` +
+            `U+${code.toString(16).toUpperCase().padStart(4, "0")} ("${value[i]}"). ` +
+            `Full value: ${JSON.stringify(value)}`,
+        );
+      }
+    }
+  }
+  console.log("[Planner] ASCII validation passed");
+}
+
 // ── Single model call ─────────────────────────────────────────────────────────
 
 async function callOpenRouter(
@@ -216,21 +240,27 @@ async function callOpenRouter(
   messages: { role: string; content: string }[],
   apiKey: string,
 ): Promise<{ content: string; model: string }> {
-  console.log(`[Planner] Request Start — model=${model}`);
+  console.log(`[Planner] Request Start - model=${model}`);
+
+  const requestHeaders: Record<string, string> = {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${apiKey}`,
+    "HTTP-Referer": "https://ai-agent-platform.replit.app",
+    "X-Title": "AI Agent Platform - Planner",
+  };
+
+  assertAsciiHeaders(requestHeaders);
 
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+
+  console.log("[Planner] Sending OpenRouter request");
 
   let response: Response;
   try {
     response = await fetch(OPENROUTER_URL, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-        "HTTP-Referer": "https://ai-agent-platform.replit.app",
-        "X-Title": "AI Agent Platform - Planner",
-      },
+      headers: requestHeaders,
       body: JSON.stringify({
         model,
         messages,
