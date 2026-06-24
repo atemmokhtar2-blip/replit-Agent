@@ -5,11 +5,10 @@
  * No provider-specific dependencies. No paid services required.
  *
  * Supported provider slugs:
- *   huggingface | openrouter | deepseek | qwen | local | custom
+ *   openrouter | deepseek | qwen | local | custom
  */
 
 export type ProviderSlug =
-  | "huggingface"
   | "openrouter"
   | "deepseek"
   | "qwen"

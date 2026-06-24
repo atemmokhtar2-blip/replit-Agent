@@ -254,9 +254,8 @@ router.post("/conversations/:id/messages", validateBody(sendMessageSchema), asyn
 
   if (!active) {
     assistantContent =
-      "No AI provider is configured yet. Go to **Settings → AI Providers** to connect one of the supported free providers:\n\n" +
-      "- **HuggingFace** — free public models, no API key required for many\n" +
-      "- **OpenRouter** — 50+ free models with a free API key at openrouter.ai\n" +
+      "No AI provider is configured yet. Go to **Settings → AI Providers** to connect one of the supported providers:\n\n" +
+      "- **OpenRouter** — 200+ models, many free, get a free API key at openrouter.ai\n" +
       "- **DeepSeek** — free credits on sign-up at platform.deepseek.com\n" +
       "- **Local (Ollama)** — run models on your own machine, completely free\n" +
       "- **Custom endpoint** — any OpenAI-compatible server";

@@ -221,14 +221,14 @@ function AIProvidersTab() {
                   <Label>Provider</Label>
                   <Input
                     {...addForm.register("slug")}
-                    placeholder="huggingface"
+                    placeholder="openrouter"
                   />
                 </div>
                 <div className="space-y-1">
                   <Label>Display Name</Label>
                   <Input
                     {...addForm.register("name")}
-                    placeholder="My HuggingFace"
+                    placeholder="My OpenRouter"
                   />
                 </div>
               </div>

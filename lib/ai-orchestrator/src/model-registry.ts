@@ -2,6 +2,7 @@
  * Model Registry
  *
  * Config-driven catalog of AI models and their task affinities.
+ * All models route through OpenRouter.
  *
  * EXTENDING THE PLATFORM:
  * To add a new model, append one object to MODEL_CATALOG below.
@@ -21,113 +22,95 @@
 import type { ModelRegistryEntry, TaskType } from "./types.js";
 
 // ─── Model Catalog ─────────────────────────────────────────────────────────────
-// Add new models here. That is the only change needed to extend the platform.
+// All models use OpenRouter as the provider.
 
 export const MODEL_CATALOG: ModelRegistryEntry[] = [
-  // ── HuggingFace: Coding & Debugging ──────────────────────────────────────────
+  // ── Planning (primary chain) ──────────────────────────────────────────────────
   {
-    id: "hf-qwen2.5-coder-32b",
-    name: "Qwen2.5-Coder 32B Instruct",
-    providerSlug: "huggingface",
-    modelId: "Qwen/Qwen2.5-Coder-32B-Instruct",
-    taskAffinity: ["coding", "debugging"],
+    id: "or-kimi-k2",
+    name: "Kimi K2 (Moonshot AI)",
+    providerSlug: "openrouter",
+    modelId: "moonshotai/kimi-k2",
+    taskAffinity: ["planning", "research", "analysis"],
     capabilities: {
       maxTokens: 8192,
-      supportsStreaming: false,
-      isFree: true,
-      tags: ["code-specialized", "large", "high-quality"],
+      supportsStreaming: true,
+      isFree: false,
+      tags: ["planning", "architecture", "high-quality"],
     },
     priority: 10,
   },
   {
-    id: "hf-deepseek-coder-7b",
-    name: "DeepSeek Coder 7B Instruct",
-    providerSlug: "huggingface",
-    modelId: "deepseek-ai/deepseek-coder-7b-instruct-v1.5",
-    taskAffinity: ["coding", "debugging"],
+    id: "or-qwen3-coder",
+    name: "Qwen3 Coder",
+    providerSlug: "openrouter",
+    modelId: "qwen/qwen3-coder",
+    taskAffinity: ["coding", "debugging", "planning"],
     capabilities: {
-      maxTokens: 4096,
-      supportsStreaming: false,
-      isFree: true,
-      tags: ["code-specialized", "fast"],
-    },
-    priority: 7,
-  },
-
-  // ── HuggingFace: Research & Planning ─────────────────────────────────────────
-  {
-    id: "hf-mixtral-8x7b",
-    name: "Mixtral 8x7B Instruct",
-    providerSlug: "huggingface",
-    modelId: "mistralai/Mixtral-8x7B-Instruct-v0.1",
-    taskAffinity: ["research", "planning", "analysis"],
-    capabilities: {
-      maxTokens: 32768,
-      supportsStreaming: false,
-      isFree: true,
-      tags: ["large-context", "high-quality", "mixture-of-experts"],
+      maxTokens: 8192,
+      supportsStreaming: true,
+      isFree: false,
+      tags: ["code-specialized", "large", "high-quality"],
     },
     priority: 9,
   },
   {
-    id: "hf-phi3-mini",
-    name: "Phi-3 Mini 4K Instruct",
-    providerSlug: "huggingface",
-    modelId: "microsoft/Phi-3-mini-4k-instruct",
-    taskAffinity: ["planning", "analysis", "general"],
+    id: "or-deepseek-v3",
+    name: "DeepSeek V3",
+    providerSlug: "openrouter",
+    modelId: "deepseek/deepseek-v3",
+    taskAffinity: ["coding", "debugging", "research", "analysis", "general"],
     capabilities: {
-      maxTokens: 4096,
-      supportsStreaming: false,
-      isFree: true,
-      tags: ["fast", "efficient", "reasoning"],
-    },
-    priority: 6,
-  },
-
-  // ── HuggingFace: Writing ──────────────────────────────────────────────────────
-  {
-    id: "hf-mistral-7b",
-    name: "Mistral 7B Instruct v0.3",
-    providerSlug: "huggingface",
-    modelId: "mistralai/Mistral-7B-Instruct-v0.3",
-    taskAffinity: ["writing", "research", "general"],
-    capabilities: {
-      maxTokens: 32768,
-      supportsStreaming: false,
-      isFree: true,
-      tags: ["fast", "versatile", "large-context"],
+      maxTokens: 8192,
+      supportsStreaming: true,
+      isFree: false,
+      tags: ["versatile", "high-quality", "fast"],
     },
     priority: 8,
   },
+
+  // ── General / Writing ─────────────────────────────────────────────────────────
   {
-    id: "hf-zephyr-7b",
-    name: "Zephyr 7B Beta",
-    providerSlug: "huggingface",
-    modelId: "HuggingFaceH4/zephyr-7b-beta",
-    taskAffinity: ["writing", "analysis"],
+    id: "or-llama-3.3-70b",
+    name: "Llama 3.3 70B Instruct",
+    providerSlug: "openrouter",
+    modelId: "meta-llama/llama-3.3-70b-instruct",
+    taskAffinity: ["writing", "research", "general"],
     capabilities: {
-      maxTokens: 4096,
-      supportsStreaming: false,
+      maxTokens: 8192,
+      supportsStreaming: true,
       isFree: true,
-      tags: ["instruction-tuned", "fast"],
+      tags: ["large", "versatile", "instruction-tuned"],
     },
     priority: 7,
   },
-
-  // ── HuggingFace: General fallback ─────────────────────────────────────────────
   {
-    id: "hf-falcon-7b",
-    name: "Falcon 7B Instruct",
-    providerSlug: "huggingface",
-    modelId: "tiiuae/falcon-7b-instruct",
-    taskAffinity: ["general"],
+    id: "or-mistral-7b",
+    name: "Mistral 7B Instruct (Free)",
+    providerSlug: "openrouter",
+    modelId: "mistralai/mistral-7b-instruct:free",
+    taskAffinity: ["writing", "general"],
     capabilities: {
-      maxTokens: 2048,
-      supportsStreaming: false,
+      maxTokens: 4096,
+      supportsStreaming: true,
       isFree: true,
-      tags: ["general-purpose"],
+      tags: ["fast", "free", "versatile"],
     },
-    priority: 4,
+    priority: 5,
+  },
+  {
+    id: "or-gemma-3-27b",
+    name: "Gemma 3 27B IT (Free)",
+    providerSlug: "openrouter",
+    modelId: "google/gemma-3-27b-it:free",
+    taskAffinity: ["analysis", "writing", "general"],
+    capabilities: {
+      maxTokens: 8192,
+      supportsStreaming: true,
+      isFree: true,
+      tags: ["free", "large", "google"],
+    },
+    priority: 6,
   },
 ];
 

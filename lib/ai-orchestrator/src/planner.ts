@@ -1,24 +1,26 @@
 /**
  * AI Planner Engine
  *
- * Sends requests exclusively to the HuggingFace Space defined in HF_SPACE_URL.
- * Supports Gradio 4.x/6.x Spaces and OpenAI-compatible custom endpoints.
+ * Routes exclusively through OpenRouter with a three-model fallback chain:
+ *   1. moonshotai/kimi-k2        (primary)
+ *   2. qwen/qwen3-coder          (fallback 1)
+ *   3. deepseek/deepseek-v3      (fallback 2)
  *
- * Detection rules (applied to HF_SPACE_URL):
- *   path ends with /run/predict or /api/predict     → Gradio (old-style)
- *   path ends with /chat/completions                → OpenAI-compatible, call directly
- *   hostname ends with .hf.space (bare or root path)→ probe /config; detect Gradio or OpenAI
- *   anything else                                   → OpenAI-compatible, call directly
+ * Environment variable required:
+ *   OPENROUTER_API_KEY — API key from openrouter.ai
  *
- * Gradio 6.x call flow:
- *   1. GET {origin}/config               (Accept: application/json) → read api_prefix
- *   2. GET {origin}{api_prefix}/info     (Accept: application/json) → find chat endpoint name
- *   3. POST {origin}{api_prefix}/call/{endpoint} → returns { event_id }
- *   4. GET {origin}{api_prefix}/call/{endpoint}/{event_id} → SSE stream → parse complete event
- *
- * Never constructs api-inference.huggingface.co URLs.
- * Never appends /models/{model}/v1/chat/completions or any inference API path.
+ * Never uses HuggingFace, Gradio, or any other provider.
  */
+
+const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+
+const PLANNER_MODELS = [
+  "moonshotai/kimi-k2",
+  "qwen/qwen3-coder",
+  "deepseek/deepseek-v3",
+] as const;
+
+type PlannerModel = (typeof PLANNER_MODELS)[number];
 
 const SYSTEM_PROMPT = `You are a professional software architect and technical planner for an AI Website & Bot Builder platform.
 
@@ -80,11 +82,11 @@ export interface PlannerMessage {
 export interface PlannerResult {
   content: string;
   model?: string;
+  provider?: string;
   error?: string;
 }
 
 const TIMEOUT_MS = 90_000;
-const PROBE_TIMEOUT_MS = 8_000;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -97,303 +99,189 @@ function sanitizeEnvString(value: string | undefined): string | undefined {
   return cleaned || undefined;
 }
 
-function authHeaders(apiKey: string | undefined): Record<string, string> {
-  return apiKey ? { Authorization: `Bearer ${apiKey}` } : {};
+// ── Error classification ──────────────────────────────────────────────────────
+
+interface ClassifiedError {
+  type:
+    | "timeout"
+    | "rate_limit"
+    | "invalid_api_key"
+    | "network"
+    | "empty_response"
+    | "model_unavailable"
+    | "unknown";
+  message: string;
+  userMessage: string;
+  retryable: boolean;
 }
 
-// ── Gradio Space detection ────────────────────────────────────────────────────
+function classifyError(err: unknown, status?: number): ClassifiedError {
+  const msg = err instanceof Error ? err.message : String(err);
+  const name = err instanceof Error ? err.name : "";
 
-interface GradioConfig {
-  apiPrefix: string;
-  version: string;
-}
-
-/**
- * Fetch /config with Accept: application/json to detect Gradio and read api_prefix.
- * Returns null if the endpoint is not a Gradio Space or the request fails.
- */
-async function fetchGradioConfig(
-  origin: string,
-  apiKey: string | undefined,
-): Promise<GradioConfig | null> {
-  try {
-    const ctrl = new AbortController();
-    setTimeout(() => ctrl.abort(), PROBE_TIMEOUT_MS);
-    const res = await fetch(`${origin}/config`, {
-      headers: { Accept: "application/json", ...authHeaders(apiKey) },
-      signal: ctrl.signal,
-    });
-    if (!res.ok) return null;
-    const contentType = res.headers.get("content-type") ?? "";
-    if (!contentType.includes("application/json")) return null;
-    const data = (await res.json()) as {
-      api_prefix?: string;
-      version?: string;
-    };
-    if (!data.api_prefix) return null;
+  if (name === "AbortError" || msg.toLowerCase().includes("timeout")) {
     return {
-      apiPrefix: data.api_prefix,
-      version: data.version ?? "unknown",
+      type: "timeout",
+      message: msg,
+      userMessage:
+        "The request timed out. The model may be under heavy load — please try again.",
+      retryable: true,
     };
-  } catch {
-    return null;
   }
-}
 
-/**
- * Preferred endpoint names for the chat/respond function, in priority order.
- */
-const CHAT_ENDPOINT_NAMES = [
-  "/respond",
-  "/chat",
-  "/predict",
-  "/generate",
-  "/answer",
-  "/reply",
-  "/complete",
-  "/inference",
-];
-
-/**
- * Fetch {origin}{apiPrefix}/info to find the chat endpoint name exposed by the Space.
- * Falls back to "/predict" if no named endpoint matches.
- */
-async function findGradioChatEndpoint(
-  origin: string,
-  apiPrefix: string,
-  apiKey: string | undefined,
-): Promise<string> {
-  try {
-    const ctrl = new AbortController();
-    setTimeout(() => ctrl.abort(), PROBE_TIMEOUT_MS);
-    const res = await fetch(`${origin}${apiPrefix}/info`, {
-      headers: { Accept: "application/json", ...authHeaders(apiKey) },
-      signal: ctrl.signal,
-    });
-    if (!res.ok) return "/predict";
-    const info = (await res.json()) as {
-      named_endpoints?: Record<string, unknown>;
+  if (
+    status === 429 ||
+    msg.includes("rate limit") ||
+    msg.includes("rate_limit") ||
+    msg.includes("Too Many Requests")
+  ) {
+    return {
+      type: "rate_limit",
+      message: msg,
+      userMessage: "Rate limit reached. Trying the next model…",
+      retryable: true,
     };
-    const namedKeys = Object.keys(info.named_endpoints ?? {});
-    for (const preferred of CHAT_ENDPOINT_NAMES) {
-      if (namedKeys.includes(preferred)) return preferred;
-    }
-    // Use first available named endpoint if none match preferred names
-    if (namedKeys.length > 0) return namedKeys[0]!;
-  } catch {
-    // fall through
   }
-  return "/predict";
-}
 
-// ── Gradio SSE reader ─────────────────────────────────────────────────────────
-
-interface SseEvent {
-  event: string;
-  data: string;
-}
-
-async function* readSseEvents(
-  response: Response,
-): AsyncGenerator<SseEvent> {
-  const reader = response.body!.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let currentEvent = "message";
-
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-
-    for (const line of lines) {
-      if (line.startsWith("event:")) {
-        currentEvent = line.slice(6).trim();
-      } else if (line.startsWith("data:")) {
-        yield { event: currentEvent, data: line.slice(5).trim() };
-        currentEvent = "message";
-      }
-    }
+  if (
+    status === 401 ||
+    status === 403 ||
+    msg.includes("invalid api key") ||
+    msg.includes("Unauthorized") ||
+    msg.includes("API key")
+  ) {
+    return {
+      type: "invalid_api_key",
+      message: msg,
+      userMessage:
+        "Invalid or missing API key. Please set OPENROUTER_API_KEY in Replit Secrets.",
+      retryable: false,
+    };
   }
-}
 
-// ── Gradio call ───────────────────────────────────────────────────────────────
+  if (
+    msg.includes("empty response") ||
+    msg.includes("no content") ||
+    msg.includes("empty content")
+  ) {
+    return {
+      type: "empty_response",
+      message: msg,
+      userMessage: "The model returned an empty response. Trying the next model…",
+      retryable: true,
+    };
+  }
 
-/**
- * Call a Gradio 4.x/6.x named endpoint using the two-step call + SSE pattern.
- */
-async function callGradioEndpoint(
-  origin: string,
-  apiPrefix: string,
-  endpointName: string,
-  inputData: unknown[],
-  apiKey: string | undefined,
-): Promise<string> {
-  const headers = {
-    "Content-Type": "application/json",
-    ...authHeaders(apiKey),
+  if (
+    status === 503 ||
+    status === 502 ||
+    msg.includes("model not found") ||
+    msg.includes("unavailable") ||
+    msg.includes("overloaded")
+  ) {
+    return {
+      type: "model_unavailable",
+      message: msg,
+      userMessage: "Model is currently unavailable. Trying the next model…",
+      retryable: true,
+    };
+  }
+
+  if (
+    msg.includes("ECONNREFUSED") ||
+    msg.includes("ENOTFOUND") ||
+    msg.includes("fetch failed") ||
+    msg.includes("network")
+  ) {
+    return {
+      type: "network",
+      message: msg,
+      userMessage: "Network error connecting to OpenRouter. Please check your connection.",
+      retryable: false,
+    };
+  }
+
+  return {
+    type: "unknown",
+    message: msg,
+    userMessage: `Unexpected error: ${msg.slice(0, 200)}`,
+    retryable: true,
   };
-
-  // Step 1: submit
-  const submitUrl = `${origin}${apiPrefix}/call${endpointName}`;
-  const submitCtrl = new AbortController();
-  setTimeout(() => submitCtrl.abort(), 30_000);
-
-  const submitRes = await fetch(submitUrl, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ data: inputData }),
-    signal: submitCtrl.signal,
-  });
-
-  if (!submitRes.ok) {
-    const text = await submitRes.text();
-    throw new Error(`Gradio submit failed (${submitRes.status}): ${text.slice(0, 200)}`);
-  }
-
-  const { event_id } = (await submitRes.json()) as { event_id: string };
-
-  // Step 2: read SSE result stream
-  const sseUrl = `${origin}${apiPrefix}/call${endpointName}/${event_id}`;
-  const sseCtrl = new AbortController();
-  setTimeout(() => sseCtrl.abort(), TIMEOUT_MS);
-
-  const sseRes = await fetch(sseUrl, {
-    headers: authHeaders(apiKey),
-    signal: sseCtrl.signal,
-  });
-
-  if (!sseRes.ok) {
-    throw new Error(`Gradio SSE failed (${sseRes.status})`);
-  }
-
-  let lastGenerating = "";
-  let completed = false;
-
-  for await (const ev of readSseEvents(sseRes)) {
-    if (ev.event === "heartbeat") continue;
-
-    if (ev.event === "error") {
-      throw new Error(
-        `Gradio Space returned an error. The Space's AI backend may be unavailable or misconfigured. ` +
-          `Raw error: ${ev.data}`,
-      );
-    }
-
-    if (ev.event === "generating") {
-      // Accumulate streaming tokens
-      try {
-        const parsed = JSON.parse(ev.data);
-        if (typeof parsed === "string") lastGenerating += parsed;
-      } catch {
-        lastGenerating += ev.data;
-      }
-    }
-
-    if (ev.event === "complete") {
-      completed = true;
-      // complete data is an array: ["response text"]
-      if (ev.data && ev.data !== "null") {
-        try {
-          const parsed = JSON.parse(ev.data);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            return String(parsed[0]);
-          }
-          if (typeof parsed === "string") return parsed;
-        } catch {
-          // fall through to lastGenerating
-        }
-      }
-      break;
-    }
-  }
-
-  if (lastGenerating) return lastGenerating;
-  if (completed) throw new Error("Gradio Space returned an empty response.");
-  throw new Error("Gradio SSE stream ended without a complete event.");
 }
 
-// ── OpenAI-compatible call ────────────────────────────────────────────────────
+// ── Single model call ─────────────────────────────────────────────────────────
 
-async function callOpenAIEndpoint(
-  targetUrl: string,
+async function callOpenRouter(
+  model: PlannerModel,
   messages: { role: string; content: string }[],
-  apiKey: string | undefined,
-): Promise<{ content: string; model?: string }> {
+  apiKey: string,
+): Promise<{ content: string; model: string }> {
+  console.log(`[Planner] Request Start — model=${model}`);
+
   const controller = new AbortController();
-  setTimeout(() => controller.abort(), TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-  const response = await fetch(targetUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...authHeaders(apiKey),
-    },
-    body: JSON.stringify({
-      messages,
-      max_tokens: 2500,
-      temperature: 0.3,
-      stream: false,
-    }),
-    signal: controller.signal,
-  });
-
-  console.log("[Planner] Response status =", response.status);
+  let response: Response;
+  try {
+    response = await fetch(OPENROUTER_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        "HTTP-Referer": "https://ai-agent-platform.replit.app",
+        "X-Title": "AI Agent Platform — Planner",
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        max_tokens: 4000,
+        temperature: 0.3,
+        stream: false,
+      }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Space returned HTTP ${response.status}: ${errText.slice(0, 300)}`);
+    const errText = await response.text().catch(() => "(unreadable)");
+    throw Object.assign(
+      new Error(`OpenRouter HTTP ${response.status}: ${errText.slice(0, 300)}`),
+      { status: response.status },
+    );
   }
 
   const data = (await response.json()) as Record<string, unknown>;
 
-  if (typeof data["error"] === "string") throw new Error(data["error"]);
+  if (typeof data["error"] === "string") {
+    throw new Error(data["error"]);
+  }
+  if (
+    data["error"] &&
+    typeof data["error"] === "object" &&
+    "message" in (data["error"] as object)
+  ) {
+    throw new Error((data["error"] as { message: string }).message);
+  }
 
   const choices = data["choices"] as
-    | { message: { content: string }; finish_reason: string }[]
+    | { message: { content: string | null }; finish_reason: string }[]
     | undefined;
+
   const content = choices?.[0]?.message?.content?.trim();
 
   if (!content) {
     throw new Error(
-      `Space returned an empty response. Raw: ${JSON.stringify(data).slice(0, 200)}`,
+      `empty response from model. Raw: ${JSON.stringify(data).slice(0, 200)}`,
     );
   }
 
-  return {
-    content,
-    model: typeof data["model"] === "string" ? data["model"] : undefined,
-  };
-}
+  const resolvedModel =
+    typeof data["model"] === "string" ? data["model"] : model;
 
-// ── Reachability pre-check ────────────────────────────────────────────────────
-
-async function checkReachability(
-  target: string,
-  apiKey: string | undefined,
-): Promise<{ ok: boolean; status?: number; error?: string }> {
-  try {
-    const ctrl = new AbortController();
-    setTimeout(() => ctrl.abort(), PROBE_TIMEOUT_MS);
-    const res = await fetch(target, {
-      method: "HEAD",
-      headers: authHeaders(apiKey),
-      signal: ctrl.signal,
-    });
-    // Any HTTP response (even 4xx/5xx) means the host is reachable
-    return { ok: true, status: res.status };
-  } catch (e) {
-    const err = e as Error & { cause?: { code?: string } };
-    return {
-      ok: false,
-      error: err.cause?.code
-        ? `${err.message} (${err.cause.code})`
-        : err.message,
-    };
-  }
+  console.log(`[Planner] Request Success — model=${resolvedModel}`);
+  return { content, model: resolvedModel };
 }
 
 // ── Main export ───────────────────────────────────────────────────────────────
@@ -402,106 +290,20 @@ export async function runPlanner(
   userMessage: string,
   history: PlannerMessage[] = [],
 ): Promise<PlannerResult> {
-  const spaceUrl = sanitizeEnvString(process.env["HF_SPACE_URL"]);
-  const apiKey = sanitizeEnvString(process.env["HF_API_KEY"]);
+  console.log("[Planner] Provider = OpenRouter");
 
-  // ── Diagnostic 1 ──────────────────────────────────────────────────────────
-  console.log("[Planner] HF_SPACE_URL =", spaceUrl ?? "(not set)");
+  const apiKey = sanitizeEnvString(process.env["OPENROUTER_API_KEY"]);
 
-  if (!spaceUrl) {
-    console.warn("[Planner] HF_SPACE_URL is not set — returning configuration guide");
-    return { content: buildConfigurationGuide(userMessage), model: "fallback" };
-  }
-
-  let parsedUrl: URL;
-  try {
-    parsedUrl = new URL(spaceUrl);
-  } catch {
-    const charCodes = [...spaceUrl.slice(0, 40)].map((c) => c.charCodeAt(0));
-    console.error("[Planner] HF_SPACE_URL is not a valid URL. Char codes:", charCodes);
+  if (!apiKey) {
+    console.warn("[Planner] OPENROUTER_API_KEY is not set");
     return {
-      content:
-        `⚠️ HF_SPACE_URL is not a valid URL.\n\n` +
-        `Stored value starts with: \`${spaceUrl.slice(0, 80)}\`\n\n` +
-        `Please re-enter the URL in Replit Secrets — copy only the URL itself with no surrounding quotes.`,
-      error: "invalid_url",
+      content: buildConfigurationGuide(userMessage),
+      model: "none",
+      provider: "openrouter",
+      error: "missing_api_key",
     };
   }
 
-  const origin = `${parsedUrl.protocol}//${parsedUrl.host}`;
-  const urlPath = parsedUrl.pathname.replace(/\/+$/, "").toLowerCase();
-
-  // ── Reachability pre-check (on origin, not full path) ─────────────────────
-  const reach = await checkReachability(origin, apiKey);
-  if (!reach.ok) {
-    console.error("[Planner] Space unreachable:", reach.error);
-    return {
-      content:
-        `⚠️ The Planner Space is unreachable.\n\n` +
-        `**URL:** ${spaceUrl}\n` +
-        `**Error:** ${reach.error}\n\n` +
-        `**Possible causes:**\n` +
-        `- The Space is sleeping — open it in a browser first to wake it up\n` +
-        `- The URL in HF_SPACE_URL is incorrect\n` +
-        `- A network restriction is blocking the connection`,
-      error: reach.error,
-    };
-  }
-
-  // ── Detect Space type ──────────────────────────────────────────────────────
-  // Fast static check first
-  let spaceType: "gradio" | "openai" = "openai";
-  let gradioApiPrefix = "/gradio_api";
-  let gradioChatEndpoint = "/respond";
-
-  if (
-    urlPath === "/run/predict" ||
-    urlPath === "/api/predict"
-  ) {
-    spaceType = "gradio";
-    gradioApiPrefix = ""; // old-style path directly on origin
-  } else if (
-    urlPath.endsWith("/chat/completions") ||
-    urlPath.endsWith("/completions")
-  ) {
-    spaceType = "openai";
-  } else {
-    // Probe /config to detect Gradio
-    const config = await fetchGradioConfig(origin, apiKey);
-    if (config) {
-      spaceType = "gradio";
-      gradioApiPrefix = config.apiPrefix;
-      console.log(
-        `[Planner] Detected Gradio ${config.version} (api_prefix: ${config.apiPrefix})`,
-      );
-      gradioChatEndpoint = await findGradioChatEndpoint(
-        origin,
-        config.apiPrefix,
-        apiKey,
-      );
-      console.log(`[Planner] Using Gradio endpoint: ${gradioChatEndpoint}`);
-    }
-  }
-
-  // ── Resolve request target for logging ────────────────────────────────────
-  let requestTarget: string;
-  if (spaceType === "gradio") {
-    requestTarget =
-      gradioApiPrefix === ""
-        ? spaceUrl // old-style /run/predict URL passed directly
-        : `${origin}${gradioApiPrefix}/call${gradioChatEndpoint}`;
-  } else {
-    requestTarget = spaceUrl;
-  }
-
-  // ── Diagnostic 2 ──────────────────────────────────────────────────────────
-  console.log(
-    "[Planner] Request target =",
-    requestTarget,
-    `(type: ${spaceType})`,
-  );
-
-  // ── Build messages for OpenAI path ────────────────────────────────────────
   const messages = [
     { role: "system", content: SYSTEM_PROMPT },
     ...history
@@ -510,66 +312,57 @@ export async function runPlanner(
     { role: "user", content: userMessage },
   ];
 
-  // ── Call the Space ────────────────────────────────────────────────────────
-  try {
-    let content: string;
-    let model: string | undefined;
+  const modelErrors: { model: PlannerModel; error: ClassifiedError }[] = [];
 
-    if (spaceType === "gradio") {
-      if (gradioApiPrefix === "") {
-        // Old-style /run/predict — call with Gradio predict body directly
-        const prompt = messages
-          .map((m) =>
-            m.role === "system"
-              ? `[System]: ${m.content}`
-              : m.role === "assistant"
-                ? `Assistant: ${m.content}`
-                : `User: ${m.content}`,
-          )
-          .join("\n\n");
-        content = await callGradioEndpoint(
-          origin,
-          "",
-          "/run/predict",
-          [prompt],
-          apiKey,
-        );
-      } else {
-        // Gradio 4.x/6.x named endpoint
-        content = await callGradioEndpoint(
-          origin,
-          gradioApiPrefix,
-          gradioChatEndpoint,
-          [userMessage, SYSTEM_PROMPT, 2500, 0.3],
-          apiKey,
+  for (const model of PLANNER_MODELS) {
+    console.log(`[Planner] Model = ${model}`);
+
+    try {
+      const result = await callOpenRouter(model, messages, apiKey);
+      return {
+        content: result.content,
+        model: result.model,
+        provider: "openrouter",
+      };
+    } catch (err) {
+      const raw = err as Error & { status?: number };
+      const classified = classifyError(err, raw.status);
+
+      console.error(
+        `[Planner] Request Failed — model=${model} type=${classified.type} message=${classified.message.slice(0, 120)}`,
+      );
+
+      modelErrors.push({ model, error: classified });
+
+      // Non-retryable errors abort the entire chain immediately
+      if (!classified.retryable) {
+        return {
+          content: buildFatalErrorMessage(classified, model),
+          model,
+          provider: "openrouter",
+          error: classified.type,
+        };
+      }
+
+      // Try the next model in the fallback chain
+      const nextIndex = PLANNER_MODELS.indexOf(model) + 1;
+      if (nextIndex < PLANNER_MODELS.length) {
+        const nextModel = PLANNER_MODELS[nextIndex]!;
+        console.log(
+          `[Planner] Fallback Activated — switching from ${model} to ${nextModel}`,
         );
       }
-      // ── Diagnostic 3 (Gradio: logged inside callGradioEndpoint step 2) ──
-      console.log("[Planner] Response status = 200 (Gradio SSE complete)");
-      model = "gradio";
-    } else {
-      const result = await callOpenAIEndpoint(requestTarget, messages, apiKey);
-      // ── Diagnostic 3 logged inside callOpenAIEndpoint ───────────────────
-      content = result.content;
-      model = result.model ?? "openai-compatible";
     }
-
-    return { content, model };
-  } catch (err) {
-    if ((err as { name?: string }).name === "AbortError") {
-      console.warn("[Planner] Request timed out after", TIMEOUT_MS, "ms");
-      return {
-        content:
-          "⚠️ The Planner timed out. The Space may be loading or under heavy load — please try again in a moment.",
-        error: "timeout",
-      };
-    }
-    console.error("[Planner] Space error:", err);
-    return {
-      content: buildProviderErrorMessage(err as Error, spaceUrl),
-      error: String(err),
-    };
   }
+
+  // All models exhausted
+  console.error("[Planner] All models in fallback chain failed");
+  return {
+    content: buildAllFailedMessage(modelErrors),
+    model: "none",
+    provider: "openrouter",
+    error: "all_models_failed",
+  };
 }
 
 // ── Error messages ────────────────────────────────────────────────────────────
@@ -577,39 +370,58 @@ export async function runPlanner(
 function buildConfigurationGuide(userMessage: string): string {
   return `## Planner Engine — Configuration Required
 
-The AI Planner is not yet connected to a HuggingFace Space.
+The AI Planner requires an OpenRouter API key to generate architecture plans.
 
 **Your request:** "${userMessage.slice(0, 120)}${userMessage.length > 120 ? "..." : ""}"
 
 ---
 
-To activate the Planner, set these environment variables in Replit Secrets:
+To activate the Planner, set this environment variable in Replit Secrets:
 
-**HF_SPACE_URL** — The URL of your HuggingFace Space.
+**OPENROUTER_API_KEY** — Your API key from [openrouter.ai](https://openrouter.ai/keys)
 
-Supported formats:
-\`https://your-username-your-space.hf.space\`
-\`https://your-username-your-space.hf.space/run/predict\`
-\`https://your-username-your-space.hf.space/v1/chat/completions\`
+OpenRouter is free to sign up. The Planner uses:
+- **Primary:** moonshotai/kimi-k2
+- **Fallback 1:** qwen/qwen3-coder
+- **Fallback 2:** deepseek/deepseek-v3
 
-The Planner will automatically detect whether the Space is a Gradio app or an OpenAI-compatible endpoint.
-
-**HF_API_KEY** *(optional)* — Your HuggingFace API token for private Spaces.
-Get one free at: https://huggingface.co/settings/tokens`;
+Once the key is set, restart the backend and try again.`;
 }
 
-function buildProviderErrorMessage(err: Error, spaceUrl: string): string {
-  const message = err.message.slice(0, 400);
-  return `⚠️ The Planner could not get a response from the HuggingFace Space.
+function buildFatalErrorMessage(
+  classified: ClassifiedError,
+  model: PlannerModel,
+): string {
+  return `⚠️ Planner Error
 
-**Space URL:** ${spaceUrl}
-**Error:** ${message}
+**Provider:** OpenRouter
+**Model:** ${model}
+**Error type:** ${classified.type}
 
-**Possible causes:**
-- The Space's AI backend is unavailable or not configured correctly
-- The Space is sleeping — open it in a browser to wake it up, then retry
-- Rate limit reached on the Space
-- The Space requires an API key — verify HF_API_KEY is set correctly
+${classified.userMessage}
 
-Please verify your Space is running and try again.`;
+${
+  classified.type === "invalid_api_key"
+    ? "Add your OpenRouter API key to Replit Secrets as **OPENROUTER_API_KEY** and restart the backend."
+    : "Please check your network connection and try again."
+}`;
+}
+
+function buildAllFailedMessage(
+  modelErrors: { model: PlannerModel; error: ClassifiedError }[],
+): string {
+  const lines = modelErrors.map(
+    ({ model, error }) => `- **${model}**: ${error.userMessage}`,
+  );
+
+  return `⚠️ Planner — All Models Unavailable
+
+The Planner tried every model in the fallback chain but none succeeded:
+
+${lines.join("\n")}
+
+**Provider:** OpenRouter
+**Fallback chain:** ${PLANNER_MODELS.join(" → ")}
+
+Please try again in a moment. If the issue persists, verify your OPENROUTER_API_KEY is valid at [openrouter.ai/keys](https://openrouter.ai/keys).`;
 }
