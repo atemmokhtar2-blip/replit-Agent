@@ -1,11 +1,16 @@
 /**
- * HuggingFace Inference API Provider
+ * HuggingFace Space Provider
  *
- * Free tier: public models available without an API key.
- * Paid tier: private models + higher rate limits with HF_TOKEN.
+ * Calls HuggingFace Spaces that expose an OpenAI-compatible
+ * /v1/chat/completions endpoint (e.g. Text Generation Inference Spaces).
  *
- * Default base: https://api-inference.huggingface.co
- * Docs: https://huggingface.co/docs/api-inference
+ * Configure base_url to your Space's root URL, e.g.:
+ *   https://your-username-your-space.hf.space
+ *
+ * The provider appends /v1/chat/completions automatically.
+ * It never constructs api-inference.huggingface.co URLs.
+ *
+ * Docs: https://huggingface.co/docs/text-generation-inference
  */
 
 import { BaseProvider } from "./base.js";
@@ -19,7 +24,7 @@ import type {
   StreamChunk,
 } from "../types.js";
 
-const FREE_MODELS: ModelInfo[] = [
+const SPACE_MODELS: ModelInfo[] = [
   { id: "mistralai/Mistral-7B-Instruct-v0.3", name: "Mistral 7B Instruct", isFree: true, contextLength: 32768 },
   { id: "meta-llama/Llama-3.2-3B-Instruct", name: "Llama 3.2 3B Instruct", isFree: true, contextLength: 131072 },
   { id: "HuggingFaceH4/zephyr-7b-beta", name: "Zephyr 7B Beta", isFree: true, contextLength: 32768 },
@@ -31,10 +36,12 @@ const FREE_MODELS: ModelInfo[] = [
 export class HuggingFaceProvider extends BaseProvider {
   readonly slug = "huggingface";
   readonly name = "Hugging Face";
-  readonly description = "Inference API for thousands of open-source models. Many models are free without an API key.";
-  readonly defaultBaseUrl = "https://api-inference.huggingface.co";
+  readonly description =
+    "HuggingFace Spaces with OpenAI-compatible endpoints (Text Generation Inference). Set base_url to your Space root URL.";
+  readonly defaultBaseUrl = "";
   readonly defaultModel = "mistralai/Mistral-7B-Instruct-v0.3";
-  readonly freeTierNote = "Most public models are free. Get a token at huggingface.co for higher rate limits.";
+  readonly freeTierNote =
+    "Use any public Space with a TGI-compatible endpoint. Set base_url to your Space URL.";
   readonly capabilities: ProviderCapabilities = {
     chat: true,
     streaming: true,
@@ -43,12 +50,23 @@ export class HuggingFaceProvider extends BaseProvider {
     freeModelsAvailable: true,
   };
 
+  private resolveEndpoint(config: ProviderConfig): string {
+    const base = this.resolveBaseUrl(config);
+    if (!base) {
+      throw new Error(
+        "HuggingFace provider requires a base_url (your Space URL). " +
+          "Configure it in Settings → AI Providers. Example: https://your-username-your-space.hf.space",
+      );
+    }
+    return `${base}/v1/chat/completions`;
+  }
+
   async chat(request: ChatRequest, config: ProviderConfig): Promise<ChatResponse> {
-    const baseUrl = this.resolveBaseUrl(config);
+    const endpoint = this.resolveEndpoint(config);
     const model = this.resolveModel(request, config);
     const messages = this.buildMessages(request);
 
-    const response = await fetch(`${baseUrl}/models/${model}/v1/chat/completions`, {
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: this.buildHeaders(config.apiKey),
       body: JSON.stringify({
@@ -62,7 +80,7 @@ export class HuggingFaceProvider extends BaseProvider {
 
     if (!response.ok) {
       const err = await response.text();
-      throw new Error(`HuggingFace error ${response.status}: ${err}`);
+      throw new Error(`HuggingFace Space error ${response.status}: ${err}`);
     }
 
     const data = await response.json() as {
@@ -75,20 +93,25 @@ export class HuggingFaceProvider extends BaseProvider {
       content: data.choices[0]?.message?.content ?? "",
       model,
       finishReason: data.choices[0]?.finish_reason,
-      usage: data.usage ? {
-        promptTokens: data.usage.prompt_tokens,
-        completionTokens: data.usage.completion_tokens,
-        totalTokens: data.usage.total_tokens,
-      } : undefined,
+      usage: data.usage
+        ? {
+            promptTokens: data.usage.prompt_tokens,
+            completionTokens: data.usage.completion_tokens,
+            totalTokens: data.usage.total_tokens,
+          }
+        : undefined,
     };
   }
 
-  async *chatStream(request: ChatRequest, config: ProviderConfig): AsyncGenerator<StreamChunk> {
-    const baseUrl = this.resolveBaseUrl(config);
+  async *chatStream(
+    request: ChatRequest,
+    config: ProviderConfig,
+  ): AsyncGenerator<StreamChunk> {
+    const endpoint = this.resolveEndpoint(config);
     const model = this.resolveModel(request, config);
     const messages = this.buildMessages(request);
 
-    const response = await fetch(`${baseUrl}/models/${model}/v1/chat/completions`, {
+    const response = await fetch(endpoint, {
       method: "POST",
       headers: this.buildHeaders(config.apiKey),
       body: JSON.stringify({
@@ -102,22 +125,22 @@ export class HuggingFaceProvider extends BaseProvider {
 
     if (!response.ok) {
       const err = await response.text();
-      throw new Error(`HuggingFace stream error ${response.status}: ${err}`);
+      throw new Error(`HuggingFace Space stream error ${response.status}: ${err}`);
     }
 
     yield* this.parseSSEStream(response);
   }
 
   async listModels(_config: ProviderConfig): Promise<ModelInfo[]> {
-    return FREE_MODELS;
+    return SPACE_MODELS;
   }
 
   async testConnection(config: ProviderConfig): Promise<ConnectionTestResult> {
     const start = Date.now();
     try {
-      const baseUrl = this.resolveBaseUrl(config);
+      const endpoint = this.resolveEndpoint(config);
       const model = config.defaultModel ?? this.defaultModel!;
-      const res = await fetch(`${baseUrl}/models/${model}/v1/chat/completions`, {
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: this.buildHeaders(config.apiKey),
         body: JSON.stringify({
@@ -135,7 +158,11 @@ export class HuggingFaceProvider extends BaseProvider {
         model,
       };
     } catch (err) {
-      return { ok: false, message: String(err), latencyMs: Date.now() - start };
+      return {
+        ok: false,
+        message: String(err),
+        latencyMs: Date.now() - start,
+      };
     }
   }
 }
