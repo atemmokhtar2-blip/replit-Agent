@@ -4,3 +4,4 @@
 - [Orval mutation variable names](orval-mutation-vars.md) — generated hooks use `projectId` not `id`; always match the underlying function's param name.
 - [TanStack Query v5 queryKey required](tanstack-querykey-required.md) — UseQueryOptions in v5 requires queryKey; pass it or omit the query option entirely when only using enabled/staleTime.
 - [List hooks return arrays not list objects](list-hooks-arrays.md) — getRecentProjects and listMyProviders return T[] directly, not { items: T[] }; only paginated endpoints return NotificationList/etc with .items.
+- [Replit migration setup](replit-migration-setup.md) — pnpm monorepo; frontend on port 5000 (webview), API server on port 8000 (console); Vite proxies /api to localhost:8000; DB schema pushed via `pnpm --filter @workspace/db run push`.
