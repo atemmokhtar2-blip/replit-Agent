@@ -40,7 +40,7 @@ export default function Login() {
             token_type: res.token_type
           });
           toast.success("Welcome back", { description: "Successfully logged in." });
-          setTimeout(() => setLocation("/dashboard"), 0);
+          setLocation("/dashboard");
         },
         onError: (err) => {
           toast.error("Login Failed", {

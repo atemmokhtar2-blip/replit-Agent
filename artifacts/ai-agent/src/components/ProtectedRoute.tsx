@@ -24,7 +24,14 @@ export function ProtectedRoute({ children, requireAdmin = false }: { children: R
   }
 
   if (!isAuthenticated || (requireAdmin && user?.role !== "admin" && user?.role !== "super_admin")) {
-    return null; // Will redirect
+    // Render a stable DOM node while the redirect effect fires.
+    // Returning null here causes React's insertBefore to crash when auth
+    // state then transitions from null → loading → authenticated.
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-background">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
   }
 
   return <>{children}</>;

@@ -32,9 +32,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (error) {
-      localStorage.removeItem("access_token");
-      localStorage.removeItem("refresh_token");
-      setTokens(null);
+      // Only clear tokens on definitive auth failures (401/403).
+      // Network errors (server down) should not log the user out.
+      const status = (error as { status?: number }).status;
+      if (status === 401 || status === 403) {
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("refresh_token");
+        setTokens(null);
+      }
     }
   }, [error]);
 
