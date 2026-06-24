@@ -198,3 +198,26 @@ export const teamMembersTable = pgTable("team_members", {
 });
 
 export type TeamMember = typeof teamMembersTable.$inferSelect;
+
+// --- Project Activity ---
+export const projectActivityTable = pgTable("project_activity", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id").references(() => projectsTable.id, { onDelete: "cascade" }).notNull(),
+  userId: text("user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  action: text("action").notNull(),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type ProjectActivity = typeof projectActivityTable.$inferSelect;
+
+// --- Workspace State ---
+export const workspaceStateTable = pgTable("workspace_state", {
+  id: text("id").primaryKey(),
+  projectId: text("project_id").references(() => projectsTable.id, { onDelete: "cascade" }).notNull().unique(),
+  userId: text("user_id").references(() => usersTable.id, { onDelete: "set null" }),
+  state: jsonb("state").notNull().default({}),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
+export type WorkspaceState = typeof workspaceStateTable.$inferSelect;
