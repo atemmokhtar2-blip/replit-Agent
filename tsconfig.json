@@ -14,6 +14,9 @@
     },
     {
       "path": "./lib/ai-provider"
+    },
+    {
+      "path": "./lib/ai-orchestrator"
     }
   ]
 }

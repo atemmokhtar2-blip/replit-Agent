@@ -17,6 +17,7 @@ import {
 import { eq, and, desc, sql } from "drizzle-orm";
 import { registry } from "@workspace/ai-provider";
 import type { ProviderConfig } from "@workspace/ai-provider";
+import { aiRouter, modelRegistry, TASK_TYPES } from "@workspace/ai-orchestrator";
 import { generateId } from "../../lib/auth.js";
 import { authenticate } from "../../middlewares/authenticate.js";
 import { validateBody } from "../../middlewares/validate.js";
@@ -245,10 +246,11 @@ router.post("/conversations/:id/messages", validateBody(sendMessageSchema), asyn
     .where(eq(aiMessagesTable.conversationId, id))
     .orderBy(aiMessagesTable.createdAt);
 
-  // 3. Route through active provider (or return helpful placeholder)
+  // 3. Route through the AI orchestrator (or return helpful placeholder)
   const active = await getActiveProvider(userId);
   let assistantContent: string;
   let responseModel: string | undefined;
+  let routingMetadata: Record<string, unknown> | null = null;
 
   if (!active) {
     assistantContent =
@@ -259,22 +261,36 @@ router.post("/conversations/:id/messages", validateBody(sendMessageSchema), asyn
       "- **Local (Ollama)** — run models on your own machine, completely free\n" +
       "- **Custom endpoint** — any OpenAI-compatible server";
   } else {
-    const provider = registry.get(active.config.slug);
-    if (!provider) {
-      assistantContent = `Provider "${active.config.slug}" is not registered. Please check your provider configuration.`;
-    } else {
-      try {
-        const messages = history.slice(0, -1).map((m) => ({
-          role: m.role as "user" | "assistant" | "system",
-          content: m.content,
-        }));
-        messages.push({ role: "user", content });
-        const response = await provider.chat({ messages, model: model ?? undefined }, active.config);
-        assistantContent = response.content;
-        responseModel = response.model;
-      } catch (err) {
-        assistantContent = `Error from provider: ${err instanceof Error ? err.message : String(err)}`;
-      }
+    try {
+      const chatMessages = history.slice(0, -1).map((m) => ({
+        role: m.role as "user" | "assistant" | "system",
+        content: m.content,
+      }));
+      chatMessages.push({ role: "user", content });
+
+      const orchestration = aiRouter.route({
+        messages: chatMessages,
+        userProviderConfig: active.config,
+        requestedModel: model ?? undefined,
+      });
+
+      const response = await orchestration.provider.chat(
+        { messages: chatMessages },
+        orchestration.resolvedConfig,
+      );
+
+      assistantContent = response.content;
+      responseModel = response.model ?? orchestration.decision.selectedModelId;
+      routingMetadata = {
+        taskType: orchestration.decision.taskType,
+        rationale: orchestration.decision.rationale,
+        fallback: orchestration.decision.fallback,
+        registryEntryId: orchestration.decision.selectedRegistryEntryId,
+        confidence: orchestration.decision.classification.confidence,
+        signals: orchestration.decision.classification.signals,
+      };
+    } catch (err) {
+      assistantContent = `Error from provider: ${err instanceof Error ? err.message : String(err)}`;
     }
   }
 
@@ -286,7 +302,9 @@ router.post("/conversations/:id/messages", validateBody(sendMessageSchema), asyn
       conversationId: id,
       role: "assistant",
       content: assistantContent,
-      metadata: responseModel ? { model: responseModel } : null,
+      metadata: responseModel || routingMetadata
+        ? { model: responseModel ?? null, routing: routingMetadata }
+        : null,
     })
     .returning();
 
@@ -503,6 +521,29 @@ router.get("/providers/:id/models", async (req, res) => {
   });
 
   res.json({ items: models });
+});
+
+// ─── Orchestrator Info ─────────────────────────────────────────────────────────
+
+// GET /ai/orchestrator/info — model catalog + supported task types (no auth needed)
+router.get("/orchestrator/info", (_req, res) => {
+  res.json({
+    taskTypes: TASK_TYPES,
+    models: modelRegistry.listAll().map((e) => ({
+      id: e.id,
+      name: e.name,
+      providerSlug: e.providerSlug,
+      modelId: e.modelId,
+      taskAffinity: e.taskAffinity,
+      priority: e.priority,
+      capabilities: {
+        maxTokens: e.capabilities.maxTokens,
+        supportsStreaming: e.capabilities.supportsStreaming,
+        isFree: e.capabilities.isFree,
+        tags: e.capabilities.tags,
+      },
+    })),
+  });
 });
 
 export default router;
