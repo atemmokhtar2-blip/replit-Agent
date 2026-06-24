@@ -21,6 +21,12 @@ tags:
     description: Admin operations
   - name: audit
     description: Audit log operations
+  - name: ai
+    description: AI conversations and provider management
+  - name: storage
+    description: Project file storage
+  - name: memory
+    description: Project memory store
 
 paths:
   /healthz:
@@ -671,6 +677,517 @@ paths:
               schema:
                 $ref: "#/components/schemas/AuditLogList"
 
+  # --- AI Conversations ---
+  /v1/ai/conversations:
+    get:
+      operationId: listConversations
+      tags: [ai]
+      summary: List conversations
+      parameters:
+        - name: project_id
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: per_page
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Conversation list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIConversationList"
+    post:
+      operationId: createConversation
+      tags: [ai]
+      summary: Create a conversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AIConversationInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIConversation"
+
+  /v1/ai/conversations/{conversationId}:
+    get:
+      operationId: getConversation
+      tags: [ai]
+      summary: Get conversation with messages
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Conversation with messages
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIConversationWithMessages"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      operationId: deleteConversation
+      tags: [ai]
+      summary: Delete a conversation
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /v1/ai/conversations/{conversationId}/messages:
+    get:
+      operationId: listMessages
+      tags: [ai]
+      summary: List messages in a conversation
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Message list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIMessageList"
+    post:
+      operationId: sendMessage
+      tags: [ai]
+      summary: Send a message and receive AI reply
+      parameters:
+        - name: conversationId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AIMessageInput"
+      responses:
+        "201":
+          description: Message pair
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIMessagePair"
+
+  # --- AI Provider Registry ---
+  /v1/ai/providers/available:
+    get:
+      operationId: listAvailableProviders
+      tags: [ai]
+      summary: List all built-in provider definitions
+      responses:
+        "200":
+          description: Available providers
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AIProviderDefinition"
+
+  /v1/ai/providers:
+    get:
+      operationId: listMyProviders
+      tags: [ai]
+      summary: List user's configured providers
+      responses:
+        "200":
+          description: Provider list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AIProviderConfig"
+    post:
+      operationId: createProvider
+      tags: [ai]
+      summary: Add a provider configuration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AIProviderConfigInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIProviderConfig"
+
+  /v1/ai/providers/{providerId}:
+    patch:
+      operationId: updateProvider
+      tags: [ai]
+      summary: Update a provider configuration
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AIProviderConfigUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIProviderConfig"
+    delete:
+      operationId: deleteProvider
+      tags: [ai]
+      summary: Delete a provider configuration
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /v1/ai/providers/{providerId}/activate:
+    post:
+      operationId: activateProvider
+      tags: [ai]
+      summary: Set provider as active
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Activated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIProviderActivateResponse"
+
+  /v1/ai/providers/{providerId}/test:
+    post:
+      operationId: testProvider
+      tags: [ai]
+      summary: Test provider connection
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Test result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIProviderTestResult"
+
+  /v1/ai/providers/{providerId}/models:
+    get:
+      operationId: listProviderModels
+      tags: [ai]
+      summary: List models available from a provider
+      parameters:
+        - name: providerId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Model list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIModelList"
+
+  # --- Project File Storage ---
+  /v1/storage/projects/{projectId}/files:
+    get:
+      operationId: listProjectFiles
+      tags: [storage]
+      summary: List project files
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: File list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectFileList"
+    post:
+      operationId: createProjectFile
+      tags: [storage]
+      summary: Create a project file
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectFileInput"
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectFile"
+
+  /v1/storage/projects/{projectId}/files/{fileId}:
+    get:
+      operationId: getProjectFile
+      tags: [storage]
+      summary: Get a project file
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: File
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectFile"
+    put:
+      operationId: updateProjectFile
+      tags: [storage]
+      summary: Update a project file
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectFileUpdate"
+      responses:
+        "200":
+          description: Updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProjectFile"
+    delete:
+      operationId: deleteProjectFile
+      tags: [storage]
+      summary: Delete a project file
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  # --- Project Memory ---
+  /v1/memory/projects/{projectId}:
+    get:
+      operationId: getProjectMemory
+      tags: [memory]
+      summary: List all memory entries for a project
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Memory list
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryList"
+    delete:
+      operationId: clearProjectMemory
+      tags: [memory]
+      summary: Clear all memory for a project
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cleared
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
+  /v1/memory/projects/{projectId}/{key}:
+    get:
+      operationId: getMemoryEntry
+      tags: [memory]
+      summary: Get a memory entry by key
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Memory entry
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryEntry"
+        "404":
+          description: Not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    put:
+      operationId: setMemoryEntry
+      tags: [memory]
+      summary: Set (upsert) a memory entry
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MemoryEntryInput"
+      responses:
+        "200":
+          description: Upserted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MemoryEntry"
+    delete:
+      operationId: deleteMemoryEntry
+      tags: [memory]
+      summary: Delete a memory entry
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: key
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+
 components:
   schemas:
     HealthStatus:
@@ -1050,4 +1567,345 @@ components:
         page:
           type: integer
         per_page:
+          type: integer
+
+    # AI schemas
+    AIConversation:
+      type: object
+      required: [id, user_id, title, status, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        project_id:
+          type: ["string", "null"]
+        user_id:
+          type: string
+        title:
+          type: ["string", "null"]
+        status:
+          type: string
+        created_at:
+          type: string
+        updated_at:
+          type: string
+
+    AIConversationList:
+      type: object
+      required: [items, total, page, per_page]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AIConversation"
+        total:
+          type: integer
+        page:
+          type: integer
+        per_page:
+          type: integer
+
+    AIConversationInput:
+      type: object
+      properties:
+        title:
+          type: string
+        project_id:
+          type: string
+
+    AIMessage:
+      type: object
+      required: [id, conversation_id, role, content, created_at]
+      properties:
+        id:
+          type: string
+        conversation_id:
+          type: ["string", "null"]
+        role:
+          type: string
+          enum: [user, assistant, system]
+        content:
+          type: string
+        metadata:
+          type: ["object", "null"]
+        created_at:
+          type: string
+
+    AIMessageList:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AIMessage"
+        total:
+          type: integer
+
+    AIMessageInput:
+      type: object
+      required: [content]
+      properties:
+        content:
+          type: string
+          minLength: 1
+        model:
+          type: string
+
+    AIMessagePair:
+      type: object
+      required: [user_message, assistant_message]
+      properties:
+        user_message:
+          $ref: "#/components/schemas/AIMessage"
+        assistant_message:
+          $ref: "#/components/schemas/AIMessage"
+
+    AIConversationWithMessages:
+      allOf:
+        - $ref: "#/components/schemas/AIConversation"
+        - type: object
+          properties:
+            messages:
+              type: array
+              items:
+                $ref: "#/components/schemas/AIMessage"
+
+    AIProviderCapabilities:
+      type: object
+      required: [chat, streaming, vision, function_calling, free_models_available]
+      properties:
+        chat:
+          type: boolean
+        streaming:
+          type: boolean
+        vision:
+          type: boolean
+        function_calling:
+          type: boolean
+        free_models_available:
+          type: boolean
+
+    AIProviderDefinition:
+      type: object
+      required: [slug, name, description, capabilities]
+      properties:
+        slug:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+        capabilities:
+          $ref: "#/components/schemas/AIProviderCapabilities"
+        default_base_url:
+          type: ["string", "null"]
+        default_model:
+          type: ["string", "null"]
+        free_tier_note:
+          type: ["string", "null"]
+
+    AIProviderConfig:
+      type: object
+      required: [id, slug, name, is_active, has_api_key, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        slug:
+          type: string
+        name:
+          type: string
+        base_url:
+          type: ["string", "null"]
+        default_model:
+          type: ["string", "null"]
+        is_active:
+          type: boolean
+        has_api_key:
+          type: boolean
+        config:
+          type: ["object", "null"]
+        created_at:
+          type: string
+        updated_at:
+          type: string
+
+    AIProviderConfigInput:
+      type: object
+      required: [slug, name]
+      properties:
+        slug:
+          type: string
+        name:
+          type: string
+        api_key:
+          type: string
+        base_url:
+          type: string
+        default_model:
+          type: string
+        config:
+          type: object
+
+    AIProviderConfigUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+        api_key:
+          type: string
+        base_url:
+          type: string
+        default_model:
+          type: string
+        config:
+          type: object
+
+    AIProviderActivateResponse:
+      type: object
+      required: [id, slug, name, is_active, message]
+      properties:
+        id:
+          type: string
+        slug:
+          type: string
+        name:
+          type: string
+        is_active:
+          type: boolean
+        message:
+          type: string
+
+    AIProviderTestResult:
+      type: object
+      required: [ok, message]
+      properties:
+        ok:
+          type: boolean
+        message:
+          type: string
+        latency_ms:
+          type: ["integer", "null"]
+        model:
+          type: ["string", "null"]
+
+    AIModelInfo:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        context_length:
+          type: ["integer", "null"]
+        is_free:
+          type: ["boolean", "null"]
+
+    AIModelList:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/AIModelInfo"
+
+    # Storage schemas
+    ProjectFile:
+      type: object
+      required: [id, project_id, path, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        project_id:
+          type: string
+        path:
+          type: string
+        content:
+          type: ["string", "null"]
+        mime_type:
+          type: ["string", "null"]
+        size:
+          type: ["integer", "null"]
+        created_at:
+          type: string
+        updated_at:
+          type: string
+
+    ProjectFileList:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/ProjectFile"
+        total:
+          type: integer
+
+    ProjectFileInput:
+      type: object
+      required: [path]
+      properties:
+        path:
+          type: string
+          minLength: 1
+        content:
+          type: string
+        mime_type:
+          type: string
+
+    ProjectFileUpdate:
+      type: object
+      properties:
+        path:
+          type: string
+        content:
+          type: string
+        mime_type:
+          type: string
+
+    # Memory schemas
+    MemoryEntry:
+      type: object
+      required: [id, project_id, key, value, scope, created_at, updated_at]
+      properties:
+        id:
+          type: string
+        project_id:
+          type: string
+        key:
+          type: string
+        value: {}
+        scope:
+          type: string
+          enum: [global, session, agent]
+        expires_at:
+          type: ["string", "null"]
+        created_at:
+          type: string
+        updated_at:
+          type: string
+
+    MemoryList:
+      type: object
+      required: [items, total]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MemoryEntry"
+        total:
+          type: integer
+
+    MemoryEntryInput:
+      type: object
+      required: [value]
+      properties:
+        value: {}
+        scope:
+          type: string
+          enum: [global, session, agent]
+          default: global
+        ttl_seconds:
           type: integer

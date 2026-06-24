@@ -293,6 +293,241 @@ export interface AuditLogList {
   per_page: number;
 }
 
+export interface AIConversation {
+  id: string;
+  /** @nullable */
+  project_id?: string | null;
+  user_id: string;
+  /** @nullable */
+  title: string | null;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AIConversationList {
+  items: AIConversation[];
+  total: number;
+  page: number;
+  per_page: number;
+}
+
+export interface AIConversationInput {
+  title?: string;
+  project_id?: string;
+}
+
+export type AIMessageRole = typeof AIMessageRole[keyof typeof AIMessageRole];
+
+
+export const AIMessageRole = {
+  user: 'user',
+  assistant: 'assistant',
+  system: 'system',
+} as const;
+
+/**
+ * @nullable
+ */
+export type AIMessageMetadata = { [key: string]: unknown } | null;
+
+export interface AIMessage {
+  id: string;
+  /** @nullable */
+  conversation_id: string | null;
+  role: AIMessageRole;
+  content: string;
+  /** @nullable */
+  metadata?: AIMessageMetadata;
+  created_at: string;
+}
+
+export interface AIMessageList {
+  items: AIMessage[];
+  total: number;
+}
+
+export interface AIMessageInput {
+  /** @minLength 1 */
+  content: string;
+  model?: string;
+}
+
+export interface AIMessagePair {
+  user_message: AIMessage;
+  assistant_message: AIMessage;
+}
+
+export type AIConversationWithMessages = AIConversation & {
+  messages?: AIMessage[];
+};
+
+export interface AIProviderCapabilities {
+  chat: boolean;
+  streaming: boolean;
+  vision: boolean;
+  function_calling: boolean;
+  free_models_available: boolean;
+}
+
+export interface AIProviderDefinition {
+  slug: string;
+  name: string;
+  description: string;
+  capabilities: AIProviderCapabilities;
+  /** @nullable */
+  default_base_url?: string | null;
+  /** @nullable */
+  default_model?: string | null;
+  /** @nullable */
+  free_tier_note?: string | null;
+}
+
+/**
+ * @nullable
+ */
+export type AIProviderConfigConfig = { [key: string]: unknown } | null;
+
+export interface AIProviderConfig {
+  id: string;
+  slug: string;
+  name: string;
+  /** @nullable */
+  base_url?: string | null;
+  /** @nullable */
+  default_model?: string | null;
+  is_active: boolean;
+  has_api_key: boolean;
+  /** @nullable */
+  config?: AIProviderConfigConfig;
+  created_at: string;
+  updated_at: string;
+}
+
+export type AIProviderConfigInputConfig = { [key: string]: unknown };
+
+export interface AIProviderConfigInput {
+  slug: string;
+  name: string;
+  api_key?: string;
+  base_url?: string;
+  default_model?: string;
+  config?: AIProviderConfigInputConfig;
+}
+
+export type AIProviderConfigUpdateConfig = { [key: string]: unknown };
+
+export interface AIProviderConfigUpdate {
+  name?: string;
+  api_key?: string;
+  base_url?: string;
+  default_model?: string;
+  config?: AIProviderConfigUpdateConfig;
+}
+
+export interface AIProviderActivateResponse {
+  id: string;
+  slug: string;
+  name: string;
+  is_active: boolean;
+  message: string;
+}
+
+export interface AIProviderTestResult {
+  ok: boolean;
+  message: string;
+  /** @nullable */
+  latency_ms?: number | null;
+  /** @nullable */
+  model?: string | null;
+}
+
+export interface AIModelInfo {
+  id: string;
+  name: string;
+  /** @nullable */
+  context_length?: number | null;
+  /** @nullable */
+  is_free?: boolean | null;
+}
+
+export interface AIModelList {
+  items: AIModelInfo[];
+}
+
+export interface ProjectFile {
+  id: string;
+  project_id: string;
+  path: string;
+  /** @nullable */
+  content?: string | null;
+  /** @nullable */
+  mime_type?: string | null;
+  /** @nullable */
+  size?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectFileList {
+  items: ProjectFile[];
+  total: number;
+}
+
+export interface ProjectFileInput {
+  /** @minLength 1 */
+  path: string;
+  content?: string;
+  mime_type?: string;
+}
+
+export interface ProjectFileUpdate {
+  path?: string;
+  content?: string;
+  mime_type?: string;
+}
+
+export type MemoryEntryScope = typeof MemoryEntryScope[keyof typeof MemoryEntryScope];
+
+
+export const MemoryEntryScope = {
+  global: 'global',
+  session: 'session',
+  agent: 'agent',
+} as const;
+
+export interface MemoryEntry {
+  id: string;
+  project_id: string;
+  key: string;
+  value: unknown;
+  scope: MemoryEntryScope;
+  /** @nullable */
+  expires_at?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface MemoryList {
+  items: MemoryEntry[];
+  total: number;
+}
+
+export type MemoryEntryInputScope = typeof MemoryEntryInputScope[keyof typeof MemoryEntryInputScope];
+
+
+export const MemoryEntryInputScope = {
+  global: 'global',
+  session: 'session',
+  agent: 'agent',
+} as const;
+
+export interface MemoryEntryInput {
+  value: unknown;
+  scope?: MemoryEntryInputScope;
+  ttl_seconds?: number;
+}
+
 export type ListProjectsParams = {
 status?: ListProjectsStatus;
 project_type?: ListProjectsProjectType;
@@ -356,6 +591,12 @@ per_page?: number;
 export type ListAuditLogsParams = {
 user_id?: string;
 action?: string;
+page?: number;
+per_page?: number;
+};
+
+export type ListConversationsParams = {
+project_id?: string;
 page?: number;
 per_page?: number;
 };

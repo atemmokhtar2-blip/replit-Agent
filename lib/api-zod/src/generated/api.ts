@@ -598,3 +598,461 @@ export const ListAuditLogsResponse = zod.object({
 })
 
 
+/**
+ * @summary List conversations
+ */
+export const listConversationsQueryPageDefault = 1;
+export const listConversationsQueryPerPageDefault = 20;
+
+export const ListConversationsQueryParams = zod.object({
+  "project_id": zod.coerce.string().optional(),
+  "page": zod.coerce.number().default(listConversationsQueryPageDefault),
+  "per_page": zod.coerce.number().default(listConversationsQueryPerPageDefault)
+})
+
+export const ListConversationsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "project_id": zod.string().nullish(),
+  "user_id": zod.string(),
+  "title": zod.string().nullable(),
+  "status": zod.string(),
+  "created_at": zod.string(),
+  "updated_at": zod.string()
+})),
+  "total": zod.number(),
+  "page": zod.number(),
+  "per_page": zod.number()
+})
+
+
+/**
+ * @summary Create a conversation
+ */
+export const CreateConversationBody = zod.object({
+  "title": zod.string().optional(),
+  "project_id": zod.string().optional()
+})
+
+
+/**
+ * @summary Get conversation with messages
+ */
+export const GetConversationParams = zod.object({
+  "conversationId": zod.coerce.string()
+})
+
+export const GetConversationResponse = zod.object({
+  "id": zod.string(),
+  "project_id": zod.string().nullish(),
+  "user_id": zod.string(),
+  "title": zod.string().nullable(),
+  "status": zod.string(),
+  "created_at": zod.string(),
+  "updated_at": zod.string()
+}).and(zod.object({
+  "messages": zod.array(zod.object({
+  "id": zod.string(),
+  "conversation_id": zod.string().nullable(),
+  "role": zod.enum(['user', 'assistant', 'system']),
+  "content": zod.string(),
+  "metadata": zod.object({
+
+}).passthrough().nullish(),
+  "created_at": zod.string()
+})).optional()
+}))
+
+
+/**
+ * @summary Delete a conversation
+ */
+export const DeleteConversationParams = zod.object({
+  "conversationId": zod.coerce.string()
+})
+
+export const DeleteConversationResponse = zod.object({
+  "message": zod.string()
+})
+
+
+/**
+ * @summary List messages in a conversation
+ */
+export const ListMessagesParams = zod.object({
+  "conversationId": zod.coerce.string()
+})
+
+export const ListMessagesResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "conversation_id": zod.string().nullable(),
+  "role": zod.enum(['user', 'assistant', 'system']),
+  "content": zod.string(),
+  "metadata": zod.object({
+
+}).passthrough().nullish(),
+  "created_at": zod.string()
+})),
+  "total": zod.number()
+})
+
+
+/**
+ * @summary Send a message and receive AI reply
+ */
+export const SendMessageParams = zod.object({
+  "conversationId": zod.coerce.string()
+})
+
+
+
+
+export const SendMessageBody = zod.object({
+  "content": zod.string().min(1),
+  "model": zod.string().optional()
+})
+
+
+/**
+ * @summary List all built-in provider definitions
+ */
+export const ListAvailableProvidersResponseItem = zod.object({
+  "slug": zod.string(),
+  "name": zod.string(),
+  "description": zod.string(),
+  "capabilities": zod.object({
+  "chat": zod.boolean(),
+  "streaming": zod.boolean(),
+  "vision": zod.boolean(),
+  "function_calling": zod.boolean(),
+  "free_models_available": zod.boolean()
+}),
+  "default_base_url": zod.string().nullish(),
+  "default_model": zod.string().nullish(),
+  "free_tier_note": zod.string().nullish()
+})
+export const ListAvailableProvidersResponse = zod.array(ListAvailableProvidersResponseItem)
+
+
+/**
+ * @summary List user's configured providers
+ */
+export const ListMyProvidersResponseItem = zod.object({
+  "id": zod.string(),
+  "slug": zod.string(),
+  "name": zod.string(),
+  "base_url": zod.string().nullish(),
+  "default_model": zod.string().nullish(),
+  "is_active": zod.boolean(),
+  "has_api_key": zod.boolean(),
+  "config": zod.object({
+
+}).passthrough().nullish(),
+  "created_at": zod.string(),
+  "updated_at": zod.string()
+})
+export const ListMyProvidersResponse = zod.array(ListMyProvidersResponseItem)
+
+
+/**
+ * @summary Add a provider configuration
+ */
+export const CreateProviderBody = zod.object({
+  "slug": zod.string(),
+  "name": zod.string(),
+  "api_key": zod.string().optional(),
+  "base_url": zod.string().optional(),
+  "default_model": zod.string().optional(),
+  "config": zod.object({
+
+}).passthrough().optional()
+})
+
+
+/**
+ * @summary Update a provider configuration
+ */
+export const UpdateProviderParams = zod.object({
+  "providerId": zod.coerce.string()
+})
+
+export const UpdateProviderBody = zod.object({
+  "name": zod.string().optional(),
+  "api_key": zod.string().optional(),
+  "base_url": zod.string().optional(),
+  "default_model": zod.string().optional(),
+  "config": zod.object({
+
+}).passthrough().optional()
+})
+
+export const UpdateProviderResponse = zod.object({
+  "id": zod.string(),
+  "slug": zod.string(),
+  "name": zod.string(),
+  "base_url": zod.string().nullish(),
+  "default_model": zod.string().nullish(),
+  "is_active": zod.boolean(),
+  "has_api_key": zod.boolean(),
+  "config": zod.object({
+
+}).passthrough().nullish(),
+  "created_at": zod.string(),
+  "updated_at": zod.string()
+})
+
+
+/**
+ * @summary Delete a provider configuration
+ */
+export const DeleteProviderParams = zod.object({
+  "providerId": zod.coerce.string()
+})
+
+export const DeleteProviderResponse = zod.object({
+  "message": zod.string()
+})
+
+
+/**
+ * @summary Set provider as active
+ */
+export const ActivateProviderParams = zod.object({
+  "providerId": zod.coerce.string()
+})
+
+export const ActivateProviderResponse = zod.object({
+  "id": zod.string(),
+  "slug": zod.string(),
+  "name": zod.string(),
+  "is_active": zod.boolean(),
+  "message": zod.string()
+})
+
+
+/**
+ * @summary Test provider connection
+ */
+export const TestProviderParams = zod.object({
+  "providerId": zod.coerce.string()
+})
+
+export const TestProviderResponse = zod.object({
+  "ok": zod.boolean(),
+  "message": zod.string(),
+  "latency_ms": zod.number().nullish(),
+  "model": zod.string().nullish()
+})
+
+
+/**
+ * @summary List models available from a provider
+ */
+export const ListProviderModelsParams = zod.object({
+  "providerId": zod.coerce.string()
+})
+
+export const ListProviderModelsResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "name": zod.string(),
+  "context_length": zod.number().nullish(),
+  "is_free": zod.boolean().nullish()
+}))
+})
+
+
+/**
+ * @summary List project files
+ */
+export const ListProjectFilesParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+export const ListProjectFilesResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "project_id": zod.string(),
+  "path": zod.string(),
+  "content": zod.string().nullish(),
+  "mime_type": zod.string().nullish(),
+  "size": zod.number().nullish(),
+  "created_at": zod.string(),
+  "updated_at": zod.string()
+})),
+  "total": zod.number()
+})
+
+
+/**
+ * @summary Create a project file
+ */
+export const CreateProjectFileParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+
+
+
+export const CreateProjectFileBody = zod.object({
+  "path": zod.string().min(1),
+  "content": zod.string().optional(),
+  "mime_type": zod.string().optional()
+})
+
+
+/**
+ * @summary Get a project file
+ */
+export const GetProjectFileParams = zod.object({
+  "projectId": zod.coerce.string(),
+  "fileId": zod.coerce.string()
+})
+
+export const GetProjectFileResponse = zod.object({
+  "id": zod.string(),
+  "project_id": zod.string(),
+  "path": zod.string(),
+  "content": zod.string().nullish(),
+  "mime_type": zod.string().nullish(),
+  "size": zod.number().nullish(),
+  "created_at": zod.string(),
+  "updated_at": zod.string()
+})
+
+
+/**
+ * @summary Update a project file
+ */
+export const UpdateProjectFileParams = zod.object({
+  "projectId": zod.coerce.string(),
+  "fileId": zod.coerce.string()
+})
+
+export const UpdateProjectFileBody = zod.object({
+  "path": zod.string().optional(),
+  "content": zod.string().optional(),
+  "mime_type": zod.string().optional()
+})
+
+export const UpdateProjectFileResponse = zod.object({
+  "id": zod.string(),
+  "project_id": zod.string(),
+  "path": zod.string(),
+  "content": zod.string().nullish(),
+  "mime_type": zod.string().nullish(),
+  "size": zod.number().nullish(),
+  "created_at": zod.string(),
+  "updated_at": zod.string()
+})
+
+
+/**
+ * @summary Delete a project file
+ */
+export const DeleteProjectFileParams = zod.object({
+  "projectId": zod.coerce.string(),
+  "fileId": zod.coerce.string()
+})
+
+export const DeleteProjectFileResponse = zod.object({
+  "message": zod.string()
+})
+
+
+/**
+ * @summary List all memory entries for a project
+ */
+export const GetProjectMemoryParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+export const GetProjectMemoryResponse = zod.object({
+  "items": zod.array(zod.object({
+  "id": zod.string(),
+  "project_id": zod.string(),
+  "key": zod.string(),
+  "value": zod.unknown(),
+  "scope": zod.enum(['global', 'session', 'agent']),
+  "expires_at": zod.string().nullish(),
+  "created_at": zod.string(),
+  "updated_at": zod.string()
+})),
+  "total": zod.number()
+})
+
+
+/**
+ * @summary Clear all memory for a project
+ */
+export const ClearProjectMemoryParams = zod.object({
+  "projectId": zod.coerce.string()
+})
+
+export const ClearProjectMemoryResponse = zod.object({
+  "message": zod.string()
+})
+
+
+/**
+ * @summary Get a memory entry by key
+ */
+export const GetMemoryEntryParams = zod.object({
+  "projectId": zod.coerce.string(),
+  "key": zod.coerce.string()
+})
+
+export const GetMemoryEntryResponse = zod.object({
+  "id": zod.string(),
+  "project_id": zod.string(),
+  "key": zod.string(),
+  "value": zod.unknown(),
+  "scope": zod.enum(['global', 'session', 'agent']),
+  "expires_at": zod.string().nullish(),
+  "created_at": zod.string(),
+  "updated_at": zod.string()
+})
+
+
+/**
+ * @summary Set (upsert) a memory entry
+ */
+export const SetMemoryEntryParams = zod.object({
+  "projectId": zod.coerce.string(),
+  "key": zod.coerce.string()
+})
+
+export const setMemoryEntryBodyScopeDefault = `global`;
+
+export const SetMemoryEntryBody = zod.object({
+  "value": zod.unknown(),
+  "scope": zod.enum(['global', 'session', 'agent']).default(setMemoryEntryBodyScopeDefault),
+  "ttl_seconds": zod.number().optional()
+})
+
+export const SetMemoryEntryResponse = zod.object({
+  "id": zod.string(),
+  "project_id": zod.string(),
+  "key": zod.string(),
+  "value": zod.unknown(),
+  "scope": zod.enum(['global', 'session', 'agent']),
+  "expires_at": zod.string().nullish(),
+  "created_at": zod.string(),
+  "updated_at": zod.string()
+})
+
+
+/**
+ * @summary Delete a memory entry
+ */
+export const DeleteMemoryEntryParams = zod.object({
+  "projectId": zod.coerce.string(),
+  "key": zod.coerce.string()
+})
+
+export const DeleteMemoryEntryResponse = zod.object({
+  "message": zod.string()
+})
+
+

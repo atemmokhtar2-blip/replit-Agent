@@ -364,6 +364,9 @@ importers:
       '@types/jsonwebtoken':
         specifier: ^9.0.10
         version: 9.0.10
+      '@workspace/ai-provider':
+        specifier: workspace:*
+        version: link:../../lib/ai-provider
       '@workspace/api-zod':
         specifier: workspace:*
         version: link:../../lib/api-zod
@@ -608,6 +611,19 @@ importers:
       zod:
         specifier: 'catalog:'
         version: 3.25.76
+
+  lib/ai-provider:
+    dependencies:
+      zod:
+        specifier: 'catalog:'
+        version: 3.25.76
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.6.2
+      typescript:
+        specifier: ~5.9.3
+        version: 5.9.3
 
   lib/api-client-react:
     dependencies:
