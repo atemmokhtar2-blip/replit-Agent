@@ -1,5 +1,6 @@
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import cors from "cors";
+import path from "path";
 import pinoHttp from "pino-http";
 import router from "./routes";
 import { logger } from "./lib/logger";
@@ -30,6 +31,20 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api", router);
+
+// ── Static file serving (production) ──────────────────────────────────────────
+// Serve the built Vite frontend from the API server when NODE_ENV=production.
+// This lets a single process on port 5000 handle both /api and the SPA.
+if (process.env.NODE_ENV === "production") {
+  const clientDist = path.resolve(
+    path.dirname(new URL(import.meta.url).pathname),
+    "../../ai-agent/dist/public",
+  );
+  app.use(express.static(clientDist));
+  app.use((_req: Request, res: Response) => {
+    res.sendFile(path.join(clientDist, "index.html"));
+  });
+}
 
 // ── Global JSON error handler ─────────────────────────────────────────────────
 // Must be defined after all routes. Catches any error passed via next(err) or
