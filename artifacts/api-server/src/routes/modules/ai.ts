@@ -420,12 +420,19 @@ router.post("/planner/stream", validateBody(plannerSchema), async (req, res) => 
     }
   };
 
-  // Track client disconnect — abort the OpenRouter fetch if the browser closes
+  // Track client disconnect — abort the OpenRouter fetch if the browser closes.
+  // IMPORTANT: use res.on("close") NOT req.on("close") — for POST requests,
+  // req emits "close" when the request body is fully consumed (immediately after
+  // body parsing), which would pre-abort the signal before any LLM call.
+  // res.on("close") only fires when the response connection is terminated.
   let aborted = false;
   const abortController = new AbortController();
-  req.on("close", () => {
-    aborted = true;
-    abortController.abort();
+  res.on("close", () => {
+    if (!res.writableEnded) {
+      // Connection was terminated before the response finished — genuine disconnect
+      aborted = true;
+      abortController.abort();
+    }
   });
 
   try {
@@ -472,9 +479,6 @@ router.post("/planner/stream", validateBody(plannerSchema), async (req, res) => 
     let finalModel = "";
     let isConversation = false;
 
-    console.log("[DIAG] STEP 1 - Request received", { message: message.slice(0, 80), conversationId });
-    console.log("[DIAG] STEP 2 - Planner started");
-
     await runPlannerStream(
       message,
       historyForPlanner,
@@ -494,8 +498,6 @@ router.post("/planner/stream", validateBody(plannerSchema), async (req, res) => 
     );
 
     if (aborted) return;
-
-    console.log("[DIAG] STEP 6 - Planner completed", { finalContent: finalContent.slice(0, 80), isConversation });
 
     // ── Persist assistant reply ─────────────────────────────────────────────
     if (finalContent) {
@@ -541,7 +543,6 @@ router.post("/planner/stream", validateBody(plannerSchema), async (req, res) => 
       }
     }
 
-    console.log("[DIAG] STEP 7 - UI response returned");
     if (!res.writableEnded) {
       res.write("data: [DONE]\n\n");
       res.end();

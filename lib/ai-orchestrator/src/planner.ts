@@ -2,9 +2,9 @@
  * AI Planner Engine
  *
  * Routes exclusively through OpenRouter with a three-model fallback chain:
- *   1. moonshotai/kimi-k2        (primary)
- *   2. qwen/qwen3-coder          (fallback 1)
- *   3. deepseek/deepseek-v3      (fallback 2)
+ *   1. openai/gpt-oss-20b:free       (primary)
+ *   2. moonshotai/kimi-k2            (fallback 1)
+ *   3. deepseek/deepseek-chat-v3-0324 (fallback 2)
  *
  * Environment variable required:
  *   OPENROUTER_API_KEY — API key from openrouter.ai
@@ -16,8 +16,8 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 
 const PLANNER_MODELS = [
   "moonshotai/kimi-k2",
-  "qwen/qwen3-coder",
-  "deepseek/deepseek-v3",
+  "deepseek/deepseek-chat-v3-0324",
+  "openai/gpt-oss-20b:free",
 ] as const;
 
 type PlannerModel = (typeof PLANNER_MODELS)[number];
@@ -352,25 +352,27 @@ async function classifyIntentWithLLM(
 
     assertAsciiHeaders(requestHeaders);
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 10_000);
-
     let response: Response;
     try {
-      response = await fetch(OPENROUTER_URL, {
+      const fetchPromise = fetch(OPENROUTER_URL, {
         method: "POST",
         headers: requestHeaders,
         body: JSON.stringify({
-          model: "deepseek/deepseek-v3",
+          model: "moonshotai/kimi-k2",
           messages: [{ role: "user", content: classificationPrompt }],
           max_tokens: 10,
           temperature: 0,
           stream: false,
         }),
-        signal: controller.signal,
       });
-    } finally {
-      clearTimeout(timer);
+      response = await Promise.race([
+        fetchPromise,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("LLM classify timeout")), 10_000),
+        ),
+      ]);
+    } catch {
+      return "AMBIGUOUS";
     }
 
     if (!response.ok) {
@@ -414,10 +416,10 @@ async function callOpenRouter(
 
   assertAsciiHeaders(requestHeaders);
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
+  console.log(`[MODEL_SELECTED] planner model=${model} messages=${messages.length}`);
 
-  console.log(`[OpenRouter Request] url=${OPENROUTER_URL} model=${model} messages=${messages.length} type=project`);
+  // Use AbortSignal.timeout (proven to work) for request-level timeout
+  const timeoutSignal = AbortSignal.timeout(TIMEOUT_MS);
 
   let response: Response;
   try {
@@ -431,23 +433,24 @@ async function callOpenRouter(
         temperature: 0.3,
         stream: false,
       }),
-      signal: controller.signal,
+      signal: timeoutSignal,
     });
-  } finally {
-    clearTimeout(timer);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[MODEL_FAILED] planner model=${model} fetch error=${msg.slice(0, 120)}`);
+    throw Object.assign(new Error(msg), { status: 0, isTimeout: msg.includes("timeout") || msg.includes("Timeout") });
   }
-
-  console.log(`[OpenRouter Response] status=${response.status} ok=${response.ok}`);
 
   if (!response.ok) {
     const errText = await response.text().catch(() => "(unreadable)");
+    console.error(`[MODEL_FAILED] planner model=${model} status=${response.status} body=${errText.slice(0, 120)}`);
     throw Object.assign(
       new Error(`OpenRouter HTTP ${response.status}: ${errText.slice(0, 300)}`),
       { status: response.status },
     );
   }
 
-  const data = (await response.json()) as Record<string, unknown>;
+  const data: Record<string, unknown> = await response.json() as Record<string, unknown>;
 
   if (typeof data["error"] === "string") {
     throw new Error(data["error"]);
@@ -475,16 +478,16 @@ async function callOpenRouter(
   const resolvedModel =
     typeof data["model"] === "string" ? data["model"] : model;
 
-  console.log(`[Model] resolved=${resolvedModel}`);
   return { content, model: resolvedModel };
 }
 
 // ── Conversational response call ───────────────────────────────────────────────
 
 // Models tried in order for conversational responses (fast, low-token)
+// Paid models first — free-tier models queue and can hang for 30+ seconds
 const CONVERSATIONAL_MODELS = [
   "moonshotai/kimi-k2",
-  "qwen/qwen3-coder",
+  "deepseek/deepseek-chat-v3-0324",
 ] as const;
 
 async function callOpenRouterConversational(
@@ -502,16 +505,18 @@ async function callOpenRouterConversational(
 
   let lastError: Error | undefined;
 
-  for (const model of CONVERSATIONAL_MODELS) {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30_000);
-
-    console.log(`[OpenRouter Request] url=${OPENROUTER_URL} model=${model} messages=${messages.length} type=conversational`);
+  for (let i = 0; i < CONVERSATIONAL_MODELS.length; i++) {
+    const model = CONVERSATIONAL_MODELS[i]!;
+    if (i > 0) console.log(`[FALLBACK_ACTIVATED] conversational switching to model=${model} attempt=${i + 1}/${CONVERSATIONAL_MODELS.length}`);
+    console.log(`[MODEL_SELECTED] conversational model=${model} messages=${messages.length}`);
 
     try {
-      let response: Response;
+      // AbortSignal.timeout is proven to work and aborts fetch + body reading
+      const timeoutSig = AbortSignal.timeout(15_000);
+
+      let resp: Response;
       try {
-        response = await fetch(OPENROUTER_URL, {
+        resp = await fetch(OPENROUTER_URL, {
           method: "POST",
           headers: requestHeaders,
           body: JSON.stringify({
@@ -521,26 +526,25 @@ async function callOpenRouterConversational(
             temperature: 0.7,
             stream: false,
           }),
-          signal: controller.signal,
+          signal: timeoutSig,
         });
-      } finally {
-        clearTimeout(timer);
+      } catch (fetchErr) {
+        const msg = fetchErr instanceof Error ? fetchErr.message : String(fetchErr);
+        console.error(`[MODEL_FAILED] conversational model=${model} fetch error=${msg.slice(0, 120)}`);
+        throw fetchErr;
       }
 
-      console.log(`[OpenRouter Response] status=${response.status} ok=${response.ok} model=${model}`);
-
-      if (!response.ok) {
-        const errText = await response.text().catch(() => "(unreadable)");
-        const err = Object.assign(
-          new Error(`OpenRouter HTTP ${response.status}: ${errText.slice(0, 300)}`),
-          { status: response.status },
+      if (!resp.ok) {
+        const errText = await resp.text().catch(() => "(unreadable)");
+        console.error(`[MODEL_FAILED] conversational model=${model} status=${resp.status} body=${errText.slice(0, 120)}`);
+        throw Object.assign(
+          new Error(`OpenRouter HTTP ${resp.status}: ${errText.slice(0, 300)}`),
+          { status: resp.status },
         );
-        lastError = err;
-        console.warn(`[OpenRouter Response] FAILED model=${model} status=${response.status} error=${errText.slice(0, 120)}`);
-        continue;
       }
 
-      const data = (await response.json()) as Record<string, unknown>;
+      const data: Record<string, unknown> = await resp.json() as Record<string, unknown>;
+
       const choices = data["choices"] as
         | { message: { content: string | null }; finish_reason: string }[]
         | undefined;
@@ -554,13 +558,10 @@ async function callOpenRouterConversational(
       const resolvedModel =
         typeof data["model"] === "string" ? data["model"] : model;
 
-      console.log(`[Model] resolved=${resolvedModel}`);
-      console.log(`[OpenRouter Response] SUCCESS content_preview="${content.slice(0, 80).replace(/\n/g, " ")}"`);
       return { content, model: resolvedModel };
     } catch (err) {
-      clearTimeout(timer);
       lastError = err instanceof Error ? err : new Error(String(err));
-      console.warn(`[OpenRouter Response] THREW model=${model} error=${lastError.message.slice(0, 120)}`);
+      console.error(`[MODEL_FAILED] conversational model=${model} error=${lastError.message.slice(0, 120)}`);
     }
   }
 
@@ -670,11 +671,13 @@ export async function runPlanner(
 
   const modelErrors: { model: PlannerModel; error: ClassifiedError }[] = [];
 
-  for (const model of PLANNER_MODELS) {
-    console.log(`[Planner] Model = ${model}`);
+  for (let i = 0; i < PLANNER_MODELS.length; i++) {
+    const model = PLANNER_MODELS[i]!;
+    if (i > 0) console.log(`[FALLBACK_ACTIVATED] planner switching to model=${model} attempt=${i + 1}/${PLANNER_MODELS.length}`);
 
     try {
       const result = await callOpenRouter(model, messages, apiKey);
+      console.log(`[PLANNER_COMPLETED] model=${result.model} contentLength=${result.content.length}`);
       return {
         content: result.content,
         model: result.model,
@@ -685,7 +688,7 @@ export async function runPlanner(
       const classified = classifyError(err, raw.status);
 
       console.error(
-        `[Planner] Request Failed — model=${model} type=${classified.type} message=${classified.message.slice(0, 120)}`,
+        `[MODEL_FAILED] planner model=${model} attempt=${i + 1} type=${classified.type} message=${classified.message.slice(0, 120)}`,
       );
 
       modelErrors.push({ model, error: classified });
@@ -698,15 +701,6 @@ export async function runPlanner(
           provider: "openrouter",
           error: classified.type,
         };
-      }
-
-      // Try the next model in the fallback chain
-      const nextIndex = PLANNER_MODELS.indexOf(model) + 1;
-      if (nextIndex < PLANNER_MODELS.length) {
-        const nextModel = PLANNER_MODELS[nextIndex]!;
-        console.log(
-          `[Planner] Fallback Activated — switching from ${model} to ${nextModel}`,
-        );
       }
     }
   }

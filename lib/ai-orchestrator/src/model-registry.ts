@@ -41,24 +41,10 @@ export const MODEL_CATALOG: ModelRegistryEntry[] = [
     priority: 10,
   },
   {
-    id: "or-qwen3-coder",
-    name: "Qwen3 Coder",
+    id: "or-deepseek-chat-v3",
+    name: "DeepSeek Chat V3 (March 2024)",
     providerSlug: "openrouter",
-    modelId: "qwen/qwen3-coder",
-    taskAffinity: ["coding", "debugging", "planning"],
-    capabilities: {
-      maxTokens: 8192,
-      supportsStreaming: true,
-      isFree: false,
-      tags: ["code-specialized", "large", "high-quality"],
-    },
-    priority: 9,
-  },
-  {
-    id: "or-deepseek-v3",
-    name: "DeepSeek V3",
-    providerSlug: "openrouter",
-    modelId: "deepseek/deepseek-v3",
+    modelId: "deepseek/deepseek-chat-v3-0324",
     taskAffinity: ["coding", "debugging", "research", "analysis", "general"],
     capabilities: {
       maxTokens: 8192,
@@ -67,6 +53,34 @@ export const MODEL_CATALOG: ModelRegistryEntry[] = [
       tags: ["versatile", "high-quality", "fast"],
     },
     priority: 8,
+  },
+  {
+    id: "or-gpt-oss-20b",
+    name: "GPT-OSS 20B (Free)",
+    providerSlug: "openrouter",
+    modelId: "openai/gpt-oss-20b:free",
+    taskAffinity: ["planning", "coding", "debugging", "research", "analysis", "general"],
+    capabilities: {
+      maxTokens: 8192,
+      supportsStreaming: true,
+      isFree: true,
+      tags: ["versatile", "free", "fallback"],
+    },
+    priority: 6,
+  },
+  {
+    id: "or-qwen-coder-32b",
+    name: "Qwen 2.5 Coder 32B",
+    providerSlug: "openrouter",
+    modelId: "qwen/qwen-2.5-coder-32b-instruct",
+    taskAffinity: ["coding", "debugging"],
+    capabilities: {
+      maxTokens: 8192,
+      supportsStreaming: true,
+      isFree: false,
+      tags: ["code-specialized", "large", "high-quality"],
+    },
+    priority: 7,
   },
 
   // ── General / Writing ─────────────────────────────────────────────────────────

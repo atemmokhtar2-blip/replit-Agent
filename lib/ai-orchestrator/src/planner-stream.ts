@@ -21,8 +21,8 @@ const TIMEOUT_MS = 120_000;
 
 const PLANNER_MODELS = [
   "moonshotai/kimi-k2",
-  "qwen/qwen3-coder",
-  "deepseek/deepseek-v3",
+  "deepseek/deepseek-chat-v3-0324",
+  "openai/gpt-oss-20b:free",
 ] as const;
 
 type PlannerModel = (typeof PLANNER_MODELS)[number];
@@ -197,29 +197,40 @@ async function callOpenRouterStream(
   onChunk: (text: string) => void,
   signal: AbortSignal,
 ): Promise<StreamCallResult> {
-  console.log(`[DIAG] STEP 3 - OpenRouter request sent`, { model, url: OPENROUTER_URL, messages: messages.length });
-  const response = await fetch(OPENROUTER_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-      "X-Title": "AI Agent",
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      stream: true,
-      temperature: 0.3,
-      max_tokens: 8000,
-    }),
-    signal,
-  });
+  console.log(`[MODEL_SELECTED] planner stream model=${model}`);
 
-  console.log(`[DIAG] STEP 4 - OpenRouter response received`, { status: response.status, ok: response.ok });
+  const timeoutSignal = AbortSignal.timeout(TIMEOUT_MS);
+  const combined = combineSignals(signal, timeoutSignal);
+
+  let response: Response;
+  try {
+    response = await fetch(OPENROUTER_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        "X-Title": "AI Agent",
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        stream: true,
+        temperature: 0.3,
+        max_tokens: 8000,
+      }),
+      signal: combined,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[MODEL_FAILED] planner stream model=${model} fetch error=${msg.slice(0, 120)}`);
+    throw err;
+  }
+
+  console.log(`[MODEL_SELECTED] planner stream response status=${response.status} model=${model}`);
 
   if (!response.ok) {
     const body = await response.text().catch(() => "");
-    console.error(`[DIAG] STEP 4 FAILED - OpenRouter error body: ${body.slice(0, 300)}`);
+    console.error(`[MODEL_FAILED] planner model=${model} status=${response.status} body=${body.slice(0, 200)}`);
     const err = new Error(`OpenRouter ${response.status}: ${body.slice(0, 200)}`);
     (err as Error & { status: number }).status = response.status;
     throw err;
@@ -268,24 +279,36 @@ async function callOpenRouterStream(
     reader.releaseLock();
   }
 
-  console.log(`[DIAG] STEP 5 - Response parsed`, { contentLength: fullContent.length, model: resolvedModel });
   return { content: fullContent, model: resolvedModel };
 }
 
 // Non-streaming conversational call (greetings / casual)
+// Use paid models first — free-tier models queue and can hang for 30+ seconds
+const CONVERSATIONAL_MODEL = "moonshotai/kimi-k2";
+const CONVERSATIONAL_TIMEOUT_MS = 15_000;
+
+// Helper: combine abort signals — AbortSignal.any is Node 20+ / modern browsers
+function combineSignals(a: AbortSignal, b: AbortSignal): AbortSignal {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const anyFn = (AbortSignal as any).any as ((signals: AbortSignal[]) => AbortSignal) | undefined;
+  return anyFn ? anyFn([a, b]) : b;
+}
+
 async function callOpenRouterConversational(
   messages: { role: string; content: string }[],
   apiKey: string,
   signal: AbortSignal,
 ): Promise<string> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30_000);
-  const combined = AbortSignal.any
-    ? AbortSignal.any([signal, controller.signal])
-    : controller.signal;
+  console.log(`[MODEL_SELECTED] conversational model=${CONVERSATIONAL_MODEL}`);
 
+  // AbortSignal.timeout is proven to work (startup validation uses it).
+  // Combining with the outer signal ensures client-disconnect also aborts.
+  const timeoutSignal = AbortSignal.timeout(CONVERSATIONAL_TIMEOUT_MS);
+  const combined = combineSignals(signal, timeoutSignal);
+
+  let response: Response;
   try {
-    const response = await fetch(OPENROUTER_URL, {
+    response = await fetch(OPENROUTER_URL, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -293,7 +316,7 @@ async function callOpenRouterConversational(
         "X-Title": "AI Agent",
       },
       body: JSON.stringify({
-        model: "deepseek/deepseek-v3",
+        model: CONVERSATIONAL_MODEL,
         messages,
         stream: false,
         temperature: 0.7,
@@ -301,15 +324,32 @@ async function callOpenRouterConversational(
       }),
       signal: combined,
     });
-
-    if (!response.ok) throw new Error(`OpenRouter ${response.status}`);
-    const json = await response.json() as {
-      choices?: { message?: { content?: string } }[];
-    };
-    return json.choices?.[0]?.message?.content?.trim() ?? "Hello! How can I help you today?";
-  } finally {
-    clearTimeout(timer);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[MODEL_FAILED] conversational model=${CONVERSATIONAL_MODEL} fetch error=${msg.slice(0, 120)}`);
+    throw err;
   }
+
+  if (!response.ok) {
+    const body = await response.text().catch(() => "");
+    console.error(`[MODEL_FAILED] conversational model=${CONVERSATIONAL_MODEL} status=${response.status} body=${body.slice(0, 120)}`);
+    throw new Error(`OpenRouter ${response.status}: ${body.slice(0, 120)}`);
+  }
+
+  // Read body with same combined signal so hanging body also times out
+  let json: { choices?: { message?: { content?: string } }[] };
+  try {
+    json = await response.json() as typeof json;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[MODEL_FAILED] conversational model=${CONVERSATIONAL_MODEL} json error=${msg.slice(0, 120)}`);
+    throw err;
+  }
+
+  const content = json.choices?.[0]?.message?.content?.trim();
+  if (!content) throw new Error("empty conversational response");
+  console.log(`[PLANNER_COMPLETED] conversational model=${CONVERSATIONAL_MODEL} contentLength=${content.length}`);
+  return content;
 }
 
 // ── Section boundary detector ──────────────────────────────────────────────────
@@ -475,8 +515,10 @@ Reply with only the single word.`,
 
   let succeeded = false;
 
-  for (const model of PLANNER_MODELS) {
+  for (let i = 0; i < PLANNER_MODELS.length; i++) {
+    const model = PLANNER_MODELS[i]!;
     if (signal.aborted) break;
+    if (i > 0) console.log(`[FALLBACK_ACTIVATED] switching to fallback model=${model} attempt=${i + 1}/${PLANNER_MODELS.length}`);
     try {
       const result = await callOpenRouterStream(
         model,
@@ -492,6 +534,7 @@ Reply with only the single word.`,
       if (signal.aborted) break;
       const msg = err instanceof Error ? err.message : String(err);
       const status = (err as { status?: number }).status;
+      console.error(`[MODEL_FAILED] planner stream model=${model} attempt=${i + 1} error=${msg.slice(0, 120)}`);
       // Non-retryable: invalid API key
       if (status === 401 || status === 403) {
         onEvent({
@@ -500,7 +543,6 @@ Reply with only the single word.`,
         });
         return;
       }
-      console.error(`[PlannerStream] Model ${model} failed: ${msg.slice(0, 120)}`);
       // Continue to next model
     }
   }
@@ -525,6 +567,7 @@ Reply with only the single word.`,
   // ── Stage 8: Blueprint Finalization ─────────────────────────────────────────
   onEvent({ type: "stage_start", stage: 8, name: "Blueprint Finalization" });
   // Stage 8 completes in the route handler after DB persistence
+  console.log(`[PLANNER_COMPLETED] model=${finalModel} contentLength=${accumulated.length}`);
   onEvent({
     type: "done",
     content: accumulated,
