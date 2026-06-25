@@ -1,4 +1,4 @@
-import { motion, useAnimation, useReducedMotion } from "framer-motion";
+import { motion, useAnimation, useReducedMotion, type Variants } from "framer-motion";
 import { useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 
@@ -247,7 +247,7 @@ export function Logo({
     }
   }, [effectiveAnimate, iconControls]);
 
-  const entranceVariants = {
+  const entranceVariants: Variants = {
     hidden: { opacity: 0, scale: 0.8, y: 6 },
     visible: {
       opacity: 1,
@@ -257,12 +257,12 @@ export function Logo({
     },
   };
 
-  const wrapperVariants = {
+  const wrapperVariants: Variants = {
     hidden: {},
     visible: { transition: { staggerChildren: 0.08 } },
   };
 
-  const textVariants = {
+  const textVariants: Variants = {
     hidden: { opacity: 0, x: -6 },
     visible: {
       opacity: 1,
