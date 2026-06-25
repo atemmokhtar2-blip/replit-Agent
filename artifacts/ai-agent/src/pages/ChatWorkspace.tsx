@@ -81,7 +81,7 @@ function MessageBubble({ message }: { message: AIMessage }) {
         className={`relative max-w-[85%] sm:max-w-[75%] rounded-2xl px-3 py-2.5 sm:px-4 sm:py-3 text-sm leading-relaxed whitespace-pre-wrap break-words
           ${isUser
             ? "bg-primary text-primary-foreground rounded-tr-sm"
-            : "bg-muted text-foreground border border-border rounded-tl-sm"
+            : "bg-muted text-foreground border border-border rounded-tl-sm pr-8"
           }`}
       >
         {!isUser && (
@@ -89,7 +89,7 @@ function MessageBubble({ message }: { message: AIMessage }) {
             onClick={handleCopy}
             aria-label={copied ? "Copied!" : "Copy message"}
             title={copied ? "Copied!" : "Copy message"}
-            className="absolute right-2 top-2 rounded p-0.5 opacity-100 sm:opacity-0 transition-opacity sm:group-hover:opacity-100 focus-visible:opacity-100 text-muted-foreground hover:text-foreground hover:bg-background/60"
+            className="absolute right-2 top-2 rounded p-0.5 opacity-100 transition-opacity text-muted-foreground hover:text-foreground hover:bg-background/60"
           >
             {copied ? (
               <span className="flex items-center gap-1 text-[10px] font-semibold text-green-500 pr-0.5">

@@ -53,7 +53,7 @@ function WorkspaceMessageBubble({ msg }: { msg: { id: string; role: string; cont
         className={`relative max-w-[85%] rounded-lg px-3 py-2 text-xs break-words ${
           isUser
             ? "bg-primary text-primary-foreground rounded-tr-none"
-            : "bg-muted text-foreground rounded-tl-none"
+            : "bg-muted text-foreground rounded-tl-none pr-7"
         }`}
         style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
       >
@@ -62,7 +62,7 @@ function WorkspaceMessageBubble({ msg }: { msg: { id: string; role: string; cont
             onClick={handleCopy}
             aria-label={copied ? "Copied!" : "Copy message"}
             title={copied ? "Copied!" : "Copy message"}
-            className="absolute right-1.5 top-1.5 rounded p-0.5 opacity-100 sm:opacity-0 transition-opacity sm:group-hover:opacity-100 focus-visible:opacity-100 text-muted-foreground hover:text-foreground hover:bg-background/60"
+            className="absolute right-1.5 top-1.5 rounded p-0.5 opacity-100 transition-opacity text-muted-foreground hover:text-foreground hover:bg-background/60"
           >
             {copied ? (
               <span className="flex items-center gap-0.5 text-[9px] font-semibold text-green-500">

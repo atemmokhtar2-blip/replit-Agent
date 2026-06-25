@@ -272,44 +272,17 @@ function classifyError(err: unknown, status?: number): ClassifiedError {
  * Throws a descriptive error if any non-compliant character is found.
  */
 function assertAsciiHeaders(headers: Record<string, string>): void {
-  console.log("[Planner] === PRE-FETCH HEADER DIAGNOSTICS ===");
-  console.log(`[Planner] Inspecting ${Object.keys(headers).length} headers`);
-
   for (const [name, value] of Object.entries(headers)) {
-    const keyCodes = Array.from(name).map((c) => c.charCodeAt(0));
-    const valCodes = Array.from(value).map((c) => c.charCodeAt(0));
-    const nonBytestringKey = keyCodes.filter((c) => c > 255);
-    const nonBytestringVal = valCodes.filter((c) => c > 255);
-
-    console.log(`[Planner] HEADER KEY   "${name}" len=${name.length} codes=[${keyCodes.join(",")}]`);
-    console.log(`[Planner] HEADER VALUE "${value.slice(0, 100)}" len=${value.length} codes=[${valCodes.join(",")}]`);
-
-    if (nonBytestringKey.length > 0) {
-      console.log(`[Planner] *** KEY HAS NON-BYTESTRING: [${nonBytestringKey.join(",")}]`);
-    }
-    if (nonBytestringVal.length > 0) {
-      console.log(`[Planner] *** VALUE HAS NON-BYTESTRING: [${nonBytestringVal.join(",")}]`);
-    }
-
     for (let i = 0; i < value.length; i++) {
       const code = value.charCodeAt(i);
       if (code > 255) {
-        console.log(
-          `[Planner] *** FOUND codepoint=${code} (U+${code.toString(16).toUpperCase().padStart(4, "0")}) ` +
-            `at index=${i} char="${value[i]}" in header "${name}"`,
-        );
         throw new Error(
           `Header "${name}" contains non-ByteString character at index ${i}: ` +
-            `U+${code.toString(16).toUpperCase().padStart(4, "0")} ("${value[i]}"). ` +
-            `Full value: ${JSON.stringify(value)}`,
+            `U+${code.toString(16).toUpperCase().padStart(4, "0")} ("${value[i]}").`,
         );
       }
     }
   }
-
-  console.log("[Planner] Headers validated");
-  console.log("[Planner] ASCII validation passed");
-  console.log("[Planner] === END HEADER DIAGNOSTICS ===");
 }
 
 // ── Intent classification ──────────────────────────────────────────────────────
@@ -432,8 +405,6 @@ async function callOpenRouter(
   messages: { role: string; content: string }[],
   apiKey: string,
 ): Promise<{ content: string; model: string }> {
-  console.log(`[Planner] Request Start - model=${model}`);
-
   const requestHeaders: Record<string, string> = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${apiKey}`,
@@ -446,7 +417,7 @@ async function callOpenRouter(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
-  console.log("[Planner] Sending OpenRouter request");
+  console.log(`[OpenRouter Request] url=${OPENROUTER_URL} model=${model} messages=${messages.length} type=project`);
 
   let response: Response;
   try {
@@ -465,6 +436,8 @@ async function callOpenRouter(
   } finally {
     clearTimeout(timer);
   }
+
+  console.log(`[OpenRouter Response] status=${response.status} ok=${response.ok}`);
 
   if (!response.ok) {
     const errText = await response.text().catch(() => "(unreadable)");
@@ -502,7 +475,7 @@ async function callOpenRouter(
   const resolvedModel =
     typeof data["model"] === "string" ? data["model"] : model;
 
-  console.log(`[Planner] Request Success — model=${resolvedModel}`);
+  console.log(`[Model] resolved=${resolvedModel}`);
   return { content, model: resolvedModel };
 }
 
@@ -533,6 +506,8 @@ async function callOpenRouterConversational(
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 30_000);
 
+    console.log(`[OpenRouter Request] url=${OPENROUTER_URL} model=${model} messages=${messages.length} type=conversational`);
+
     try {
       let response: Response;
       try {
@@ -552,15 +527,16 @@ async function callOpenRouterConversational(
         clearTimeout(timer);
       }
 
+      console.log(`[OpenRouter Response] status=${response.status} ok=${response.ok} model=${model}`);
+
       if (!response.ok) {
         const errText = await response.text().catch(() => "(unreadable)");
         const err = Object.assign(
           new Error(`OpenRouter HTTP ${response.status}: ${errText.slice(0, 300)}`),
           { status: response.status },
         );
-        // 400 = invalid model — try next; non-400 errors — also try next
         lastError = err;
-        console.warn(`[Planner] Conversational model ${model} failed: ${err.message.slice(0, 120)}`);
+        console.warn(`[OpenRouter Response] FAILED model=${model} status=${response.status} error=${errText.slice(0, 120)}`);
         continue;
       }
 
@@ -578,12 +554,13 @@ async function callOpenRouterConversational(
       const resolvedModel =
         typeof data["model"] === "string" ? data["model"] : model;
 
-      console.log(`[Planner] Conversational success — model=${resolvedModel}`);
+      console.log(`[Model] resolved=${resolvedModel}`);
+      console.log(`[OpenRouter Response] SUCCESS content_preview="${content.slice(0, 80).replace(/\n/g, " ")}"`);
       return { content, model: resolvedModel };
     } catch (err) {
       clearTimeout(timer);
       lastError = err instanceof Error ? err : new Error(String(err));
-      console.warn(`[Planner] Conversational model ${model} threw: ${lastError.message.slice(0, 120)}`);
+      console.warn(`[OpenRouter Response] THREW model=${model} error=${lastError.message.slice(0, 120)}`);
     }
   }
 
