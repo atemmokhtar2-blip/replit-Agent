@@ -9,6 +9,7 @@ import auditRouter from "./audit";
 
 // Placeholder module routers (architecture ready, no business logic yet)
 import aiRouter from "./modules/ai";
+import aiControlRouter from "./modules/ai-control";
 import deploymentRouter from "./modules/deployment";
 import memoryRouter from "./modules/memory";
 import storageModuleRouter from "./modules/storage";
@@ -29,6 +30,7 @@ router.use("/v1/audit", auditRouter);
 
 // API v1 — Future Modules (architecture placeholders)
 router.use("/v1/ai", aiRouter);
+router.use("/v1/ai", aiControlRouter);
 router.use("/v1/deployments", deploymentRouter);
 router.use("/v1/memory", memoryRouter);
 router.use("/v1/storage", storageModuleRouter);

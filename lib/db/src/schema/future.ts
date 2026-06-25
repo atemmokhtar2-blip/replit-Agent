@@ -1,12 +1,11 @@
 /**
- * Future Architecture Placeholders
+ * Future Architecture Placeholders + AI OS Infrastructure
  *
- * These tables define the schema for upcoming platform features.
- * Models, types, and relations are declared here — business logic is NOT implemented yet.
- * Each future module will import and extend these definitions.
+ * These tables define the schema for upcoming platform features and the
+ * live AI OS infrastructure (execution records, health snapshots, routing events).
  */
 
-import { pgTable, text, boolean, integer, timestamp, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, boolean, integer, timestamp, jsonb, real } from "drizzle-orm/pg-core";
 import { usersTable } from "./users";
 import { projectsTable } from "./projects";
 
@@ -221,3 +220,84 @@ export const workspaceStateTable = pgTable("workspace_state", {
 });
 
 export type WorkspaceState = typeof workspaceStateTable.$inferSelect;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI OS Infrastructure — Execution Records, Health Monitoring, Routing Events
+// ─────────────────────────────────────────────────────────────────────────────
+
+// --- Execution Records ---
+// Every AI request creates one record. Tracks agent, model, latency, retries, failovers.
+export const executionRecordsTable = pgTable("execution_records", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").references(() => usersTable.id, { onDelete: "cascade" }),
+  conversationId: text("conversation_id"),
+  agentType: text("agent_type").notNull(),
+  taskType: text("task_type").notNull(),
+  providerSlug: text("provider_slug").notNull(),
+  modelId: text("model_id").notNull(),
+  registryEntryId: text("registry_entry_id"),
+  requestSummary: text("request_summary"),
+  status: text("status").notNull().default("pending"),
+  latencyMs: integer("latency_ms"),
+  retries: integer("retries").notNull().default(0),
+  failovers: integer("failovers").notNull().default(0),
+  inputTokens: integer("input_tokens"),
+  outputTokens: integer("output_tokens"),
+  errorType: text("error_type"),
+  errorMessage: text("error_message"),
+  routingRationale: text("routing_rationale"),
+  metadata: jsonb("metadata"),
+  startedAt: timestamp("started_at", { withTimezone: true }).notNull().defaultNow(),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+});
+
+export type ExecutionRecord = typeof executionRecordsTable.$inferSelect;
+
+// --- Model Health Snapshots ---
+// Periodic health snapshots per model. Drives the health dashboard.
+export const modelHealthSnapshotsTable = pgTable("model_health_snapshots", {
+  id: text("id").primaryKey(),
+  registryEntryId: text("registry_entry_id").notNull(),
+  providerSlug: text("provider_slug").notNull(),
+  uptimePct: real("uptime_pct").notNull().default(100),
+  avgResponseMs: integer("avg_response_ms"),
+  successRate: real("success_rate").notNull().default(100),
+  errorRate: real("error_rate").notNull().default(0),
+  totalRequests: integer("total_requests").notNull().default(0),
+  activeRequests: integer("active_requests").notNull().default(0),
+  sampledAt: timestamp("sampled_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type ModelHealthSnapshot = typeof modelHealthSnapshotsTable.$inferSelect;
+
+// --- Routing Events ---
+// Every routing decision (model selected, fallback activated, etc.) is logged here.
+export const routingEventsTable = pgTable("routing_events", {
+  id: text("id").primaryKey(),
+  executionId: text("execution_id").references(() => executionRecordsTable.id, { onDelete: "cascade" }),
+  eventType: text("event_type").notNull(),
+  fromModelId: text("from_model_id"),
+  toModelId: text("to_model_id"),
+  agentType: text("agent_type"),
+  taskType: text("task_type"),
+  reason: text("reason"),
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type RoutingEvent = typeof routingEventsTable.$inferSelect;
+
+// --- User AI Preferences ---
+// Per-user AI OS preferences: preferred provider, model, context window, etc.
+export const userAiPreferencesTable = pgTable("user_ai_preferences", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").references(() => usersTable.id, { onDelete: "cascade" }).notNull().unique(),
+  preferredProvider: text("preferred_provider"),
+  preferredModel: text("preferred_model"),
+  defaultAgentType: text("default_agent_type"),
+  contextWindowSize: integer("context_window_size").notNull().default(10),
+  preferences: jsonb("preferences"),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+});
+
+export type UserAiPreferences = typeof userAiPreferencesTable.$inferSelect;

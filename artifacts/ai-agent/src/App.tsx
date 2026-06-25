@@ -22,6 +22,7 @@ import Settings from "@/pages/Settings";
 import Notifications from "@/pages/Notifications";
 import Admin from "@/pages/Admin";
 import ChatWorkspace from "@/pages/ChatWorkspace";
+import ControlCenter from "@/pages/ControlCenter";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -91,6 +92,14 @@ const AdminPage = () => (
   </ProtectedRoute>
 );
 
+const ControlCenterPage = () => (
+  <ProtectedRoute>
+    <AppLayout>
+      <ControlCenter />
+    </AppLayout>
+  </ProtectedRoute>
+);
+
 function Router() {
   return (
     <Switch>
@@ -106,6 +115,7 @@ function Router() {
       <Route path="/settings" component={SettingsPage} />
       <Route path="/notifications" component={NotificationsPage} />
       <Route path="/admin" component={AdminPage} />
+      <Route path="/control-center" component={ControlCenterPage} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -1,9 +1,9 @@
 /**
- * HuggingFace Inference API Provider
+ * OpenAI Provider
  *
- * Implements the AIProvider interface for HuggingFace's Inference API.
- * Uses the OpenAI-compatible /v1/chat/completions endpoint.
- * Requires: HUGGINGFACE_API_KEY or HF_TOKEN environment variable.
+ * Implements the AIProvider interface for the OpenAI API.
+ * Requires: OPENAI_API_KEY environment variable.
+ * Supports: GPT-4o, GPT-4o-mini, o1, o3-mini, and all OpenAI chat completion models.
  */
 
 import { BaseProvider } from "./base.js";
@@ -18,27 +18,27 @@ import type {
   ConnectionTestResult,
 } from "../types.js";
 
-const HF_BASE_URL = "https://router.huggingface.co/v1";
-const DEFAULT_MODEL = "meta-llama/Llama-3.3-70B-Instruct";
+const OPENAI_BASE_URL = "https://api.openai.com/v1";
+const DEFAULT_MODEL = "gpt-4o-mini";
 
-class HuggingFaceProvider extends BaseProvider implements AIProvider {
-  readonly slug = "huggingface";
-  readonly name = "HuggingFace";
-  readonly description = "HuggingFace Inference API - Llama, Mistral, Qwen, and 1000+ open-source models";
-  readonly defaultBaseUrl = HF_BASE_URL;
+class OpenAIProvider extends BaseProvider implements AIProvider {
+  readonly slug = "openai";
+  readonly name = "OpenAI";
+  readonly description = "OpenAI GPT-4o, o1, o3 models via the official API";
+  readonly defaultBaseUrl = OPENAI_BASE_URL;
   readonly defaultModel = DEFAULT_MODEL;
-  readonly freeTierNote = "Free tier available at huggingface.co/inference-api";
+  readonly freeTierNote = "Requires a paid API key from platform.openai.com";
   readonly capabilities: ProviderCapabilities = {
     chat: true,
     streaming: true,
-    vision: false,
-    functionCalling: false,
-    freeModelsAvailable: true,
+    vision: true,
+    functionCalling: true,
+    freeModelsAvailable: false,
   };
 
   async chat(request: ChatRequest, config: ProviderConfig): Promise<ChatResponse> {
-    const apiKey = this.resolveHFApiKey(config);
-    const baseUrl = this.resolveBaseUrl(config) || HF_BASE_URL;
+    const apiKey = this.resolveOpenAIKey(config);
+    const baseUrl = this.resolveBaseUrl(config) || OPENAI_BASE_URL;
     const model = this.resolveModel(request, config);
     const messages = this.buildMessages(request);
     const headers = this.buildHeaders(apiKey);
@@ -49,17 +49,17 @@ class HuggingFaceProvider extends BaseProvider implements AIProvider {
       body: JSON.stringify({
         model,
         messages,
-        max_tokens: request.maxTokens ?? 2048,
+        max_tokens: request.maxTokens ?? 4096,
         temperature: request.temperature ?? 0.7,
         stream: false,
       }),
-      signal: AbortSignal.timeout(60_000),
+      signal: AbortSignal.timeout(90_000),
     });
 
     if (!response.ok) {
       const errText = await response.text().catch(() => "");
       throw Object.assign(
-        new Error(`HuggingFace HTTP ${response.status}: ${errText.slice(0, 300)}`),
+        new Error(`OpenAI HTTP ${response.status}: ${errText.slice(0, 300)}`),
         { status: response.status },
       );
     }
@@ -82,8 +82,8 @@ class HuggingFaceProvider extends BaseProvider implements AIProvider {
   }
 
   async *chatStream(request: ChatRequest, config: ProviderConfig): AsyncGenerator<StreamChunk> {
-    const apiKey = this.resolveHFApiKey(config);
-    const baseUrl = this.resolveBaseUrl(config) || HF_BASE_URL;
+    const apiKey = this.resolveOpenAIKey(config);
+    const baseUrl = this.resolveBaseUrl(config) || OPENAI_BASE_URL;
     const model = this.resolveModel(request, config);
     const messages = this.buildMessages(request);
     const headers = this.buildHeaders(apiKey);
@@ -94,17 +94,17 @@ class HuggingFaceProvider extends BaseProvider implements AIProvider {
       body: JSON.stringify({
         model,
         messages,
-        max_tokens: request.maxTokens ?? 2048,
+        max_tokens: request.maxTokens ?? 4096,
         temperature: request.temperature ?? 0.7,
         stream: true,
       }),
-      signal: AbortSignal.timeout(60_000),
+      signal: AbortSignal.timeout(90_000),
     });
 
     if (!response.ok) {
       const errText = await response.text().catch(() => "");
       throw Object.assign(
-        new Error(`HuggingFace HTTP ${response.status}: ${errText.slice(0, 300)}`),
+        new Error(`OpenAI HTTP ${response.status}: ${errText.slice(0, 300)}`),
         { status: response.status },
       );
     }
@@ -112,15 +112,22 @@ class HuggingFaceProvider extends BaseProvider implements AIProvider {
     yield* this.parseSSEStream(response);
   }
 
-  async listModels(_config: ProviderConfig): Promise<ModelInfo[]> {
-    return [
-      { id: "meta-llama/Llama-3.3-70B-Instruct", name: "Llama 3.3 70B Instruct" },
-      { id: "meta-llama/Llama-3.1-8B-Instruct", name: "Llama 3.1 8B Instruct" },
-      { id: "mistralai/Mistral-7B-Instruct-v0.3", name: "Mistral 7B v0.3" },
-      { id: "Qwen/Qwen2.5-72B-Instruct", name: "Qwen 2.5 72B" },
-      { id: "Qwen/Qwen2.5-Coder-32B-Instruct", name: "Qwen 2.5 Coder 32B" },
-      { id: "microsoft/Phi-4", name: "Phi-4" },
-    ];
+  async listModels(config: ProviderConfig): Promise<ModelInfo[]> {
+    const apiKey = this.resolveOpenAIKey(config);
+    const baseUrl = this.resolveBaseUrl(config) || OPENAI_BASE_URL;
+    try {
+      const response = await fetch(`${baseUrl}/models`, {
+        headers: this.buildHeaders(apiKey),
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (!response.ok) return this.defaultModelList();
+      const data = await response.json() as { data?: { id: string }[] };
+      return (data.data ?? [])
+        .filter((m) => m.id.startsWith("gpt") || m.id.startsWith("o1") || m.id.startsWith("o3"))
+        .map((m) => ({ id: m.id, name: m.id }));
+    } catch {
+      return this.defaultModelList();
+    }
   }
 
   async testConnection(config: ProviderConfig): Promise<ConnectionTestResult> {
@@ -137,9 +144,18 @@ class HuggingFaceProvider extends BaseProvider implements AIProvider {
     }
   }
 
-  private resolveHFApiKey(config: ProviderConfig): string {
-    return config.apiKey ?? process.env["HUGGINGFACE_API_KEY"] ?? process.env["HF_TOKEN"] ?? "";
+  private resolveOpenAIKey(config: ProviderConfig): string {
+    return config.apiKey ?? process.env["OPENAI_API_KEY"] ?? "";
+  }
+
+  private defaultModelList(): ModelInfo[] {
+    return [
+      { id: "gpt-4o", name: "GPT-4o" },
+      { id: "gpt-4o-mini", name: "GPT-4o Mini" },
+      { id: "o1", name: "o1" },
+      { id: "o3-mini", name: "o3-mini" },
+    ];
   }
 }
 
-export const huggingfaceProvider = new HuggingFaceProvider();
+export const openaiProvider = new OpenAIProvider();

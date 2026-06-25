@@ -16,6 +16,7 @@ import {
   X,
   PanelLeftClose,
   PanelLeftOpen,
+  Cpu,
 } from "lucide-react";
 
 // ── Breakpoint constant (matches Tailwind's lg: 1024px) ──────────────────────
@@ -73,6 +74,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
     { href: "/projects", label: "Projects", icon: FolderGit2 },
     { href: "/notifications", label: "Notifications", icon: Bell },
+    { href: "/control-center", label: "AI Control", icon: Cpu },
     { href: "/settings", label: "Settings", icon: Settings },
   ];
 
