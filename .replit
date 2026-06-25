@@ -28,25 +28,25 @@ args = "Start Backend"
 name = "Start application"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "PORT=5000 pnpm --filter @workspace/ai-agent run dev"
-waitForPort = 5000
-
 [workflows.workflow.metadata]
 outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd artifacts/ai-agent && pnpm run dev"
+waitForPort = 5000
 
 [[workflows.workflow]]
 name = "Start Backend"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "PORT=8000 pnpm --filter @workspace/api-server run dev"
-waitForPort = 8000
-
 [workflows.workflow.metadata]
 outputType = "console"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd artifacts/api-server && pnpm run dev"
+waitForPort = 8000
 
 [agent]
 stack = "BEST_EFFORT_FALLBACK"
@@ -60,9 +60,15 @@ timeoutMs = 20000
 channel = "stable-25_05"
 
 [[ports]]
+localPort = 5000
+externalPort = 80
+
+[[ports]]
 localPort = 8000
 externalPort = 8000
 
 [userenv]
 
 [userenv.shared]
+JWT_SECRET = "94a763691ba4e63533bf7bfcf41adcd64ccfd4fcd7d45029ddae793704293eee8a36e0191c66ca6e033ae8938aa19ed174fc335431e8a07645295fc40ee15c4a"
+JWT_REFRESH_SECRET = "bf9060dea36b2c99802d21f6bf8266922f05dacb5c1081af16f9ad04d5abb5bd836de4d7ef4364557d0d04731742195f3c6f36e1a6b921e29374077ee9a5f48a"
