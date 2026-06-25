@@ -266,4 +266,56 @@
     height: 100%;
     min-height: 0;
   }
+
+  /* ── Agent execution pipeline animations ──────────────────────────────── */
+
+  /* Scanning dots — used in AgentTimeline running state */
+  @keyframes agent-dot-pulse {
+    0%, 60%, 100% {
+      opacity: 0.2;
+      transform: scale(0.75);
+    }
+    30% {
+      opacity: 1;
+      transform: scale(1.25);
+    }
+  }
+
+  .agent-dot {
+    animation: agent-dot-pulse 1.1s ease-in-out infinite;
+  }
+
+  /* File tree line reveal — staggered fade+slide in */
+  @keyframes agent-tree-reveal {
+    from {
+      opacity: 0;
+      transform: translateX(-6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+
+  .agent-tree-line {
+    opacity: 0;
+    animation: agent-tree-reveal 0.18s ease-out forwards;
+  }
+
+  /* Execution summary cell fade-in */
+  @keyframes agent-cell-in {
+    from {
+      opacity: 0;
+      transform: translateY(4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .agent-summary-cell {
+    opacity: 0;
+    animation: agent-cell-in 0.22s ease-out forwards;
+  }
 }

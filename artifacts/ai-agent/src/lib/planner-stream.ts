@@ -15,14 +15,14 @@ export type PlannerStreamEvent =
   | { type: "error"; message: string };
 
 export const PLANNER_STAGES = [
-  { id: 1, name: "Analyze Request" },
-  { id: 2, name: "Classify Project" },
-  { id: 3, name: "Design Architecture" },
-  { id: 4, name: "Design Database" },
-  { id: 5, name: "Generate APIs" },
-  { id: 6, name: "Security Review" },
-  { id: 7, name: "Deployment Strategy" },
-  { id: 8, name: "Blueprint Finalization" },
+  { id: 1, name: "Understanding Request",      action: "Scanning" },
+  { id: 2, name: "Analyzing Requirements",     action: "Mapping" },
+  { id: 3, name: "Designing Architecture",     action: "Structuring" },
+  { id: 4, name: "Planning Project Structure", action: "Structuring" },
+  { id: 5, name: "Designing Database & APIs",  action: "Synthesizing" },
+  { id: 6, name: "Preparing Dev Roadmap",      action: "Synthesizing" },
+  { id: 7, name: "Finalizing Architecture",    action: "Finalizing" },
+  { id: 8, name: "Blueprint Ready",            action: "Sealing" },
 ] as const;
 
 export async function streamToPlannerEngine(

@@ -6,6 +6,7 @@
  *  - Progressive blueprint rendering as sections stream in (right panel)
  *  - A conversation reply area for non-project responses
  *  - Past blueprint display for already-completed conversations
+ *  - Execution summary + file tree preview after blueprint generation
  *
  * Connected to real planner execution via SSE streaming — no fake progress.
  */
@@ -24,6 +25,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { AgentTimeline, type StageState } from "./design-system/AgentTimeline";
 import { BlueprintCore } from "./design-system/BlueprintCore";
 import { AIPulse } from "./design-system/AIPulse";
+import { ExecutionPanel } from "./design-system/ExecutionPanel";
 import { streamToPlannerEngine, PLANNER_STAGES } from "@/lib/planner-stream";
 import type { PlannerStreamEvent } from "@/lib/planner-stream";
 
@@ -32,6 +34,7 @@ import type { PlannerStreamEvent } from "@/lib/planner-stream";
 const INITIAL_STAGES: StageState[] = PLANNER_STAGES.map((s) => ({
   id: s.id,
   name: s.name,
+  action: s.action,
   status: "pending",
 }));
 
@@ -93,7 +96,6 @@ function SectionCard({ section, isNew }: SectionCardProps) {
         isNew ? "ring-1 ring-primary/30" : ""
       }`}
     >
-      {/* Section header */}
       <div className="flex items-center justify-between border-b border-border/50 px-4 py-2.5 bg-muted/30">
         <div className="flex items-center gap-2">
           <span className="flex h-5 w-5 items-center justify-center rounded bg-primary/15 text-[10px] font-bold text-primary">
@@ -113,7 +115,6 @@ function SectionCard({ section, isNew }: SectionCardProps) {
           )}
         </button>
       </div>
-      {/* Section body */}
       <div className="px-4 py-3 text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap font-mono">
         {section.body}
       </div>
@@ -173,7 +174,6 @@ function PastBlueprintView({ content, model }: { content: string; model?: string
 
   return (
     <div className="flex flex-col gap-0">
-      {/* Blueprint header */}
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <BlueprintCore size={24} color="#22c55e" complete active />
@@ -192,6 +192,7 @@ function PastBlueprintView({ content, model }: { content: string; model?: string
           <SectionCard key={s.section} section={s} />
         ))}
       </div>
+      <ExecutionPanel blueprint={content} model={model} />
     </div>
   );
 }
@@ -233,12 +234,6 @@ function ConversationMessage({ content, timestamp }: { content: string; timestam
 }
 
 // ── Live streaming view ────────────────────────────────────────────────────────
-
-interface LiveViewProps {
-  stages: StageState[];
-  content: string;
-  detectedSections: number;
-}
 
 function LiveBlueprintView({ content, detectedSections }: { content: string; detectedSections: number }) {
   const sections = parseBlueprint(content);
@@ -297,7 +292,7 @@ interface PlannerWorkspaceProps {
 type WorkspacePhase =
   | { kind: "idle" }
   | { kind: "streaming"; stages: StageState[]; content: string; detectedSections: number }
-  | { kind: "done_blueprint"; content: string; model: string }
+  | { kind: "done_blueprint"; content: string; model: string; stages: StageState[] }
   | { kind: "done_conversation"; content: string }
   | { kind: "error"; message: string };
 
@@ -328,12 +323,10 @@ export function PlannerWorkspace({ conversationId, messages, isFirstMessage, onS
     setIsStreaming(true);
     wasFirstRef.current = isFirstMessage;
 
-    // Cancel any in-flight request
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
-    // Initialize stage timeline
     const stages: StageState[] = INITIAL_STAGES.map((s) => ({ ...s }));
     setPhase({ kind: "streaming", stages: [...stages], content: "", detectedSections: 0 });
 
@@ -345,8 +338,11 @@ export function PlannerWorkspace({ conversationId, messages, isFirstMessage, onS
         case "stage_start":
           setPhase((prev) => {
             if (prev.kind !== "streaming") return prev;
+            const now = new Date().toISOString();
             const next = prev.stages.map((s) =>
-              s.id === event.stage ? { ...s, status: "running" as const } : s
+              s.id === event.stage
+                ? { ...s, status: "running" as const, startedAt: now }
+                : s
             );
             return { ...prev, stages: next };
           });
@@ -355,8 +351,11 @@ export function PlannerWorkspace({ conversationId, messages, isFirstMessage, onS
         case "stage_complete":
           setPhase((prev) => {
             if (prev.kind !== "streaming") return prev;
+            const now = new Date().toISOString();
             const next = prev.stages.map((s) =>
-              s.id === event.stage ? { ...s, status: "complete" as const } : s
+              s.id === event.stage
+                ? { ...s, status: "complete" as const, completedAt: now }
+                : s
             );
             return { ...prev, stages: next };
           });
@@ -379,14 +378,21 @@ export function PlannerWorkspace({ conversationId, messages, isFirstMessage, onS
           break;
 
         case "done":
-          // Mark all stages complete
-          setPhase({ kind: "done_blueprint", content: event.content, model: event.model });
+          setPhase((prev) => {
+            const finalStages: StageState[] =
+              prev.kind === "streaming"
+                ? prev.stages.map((s) => ({
+                    ...s,
+                    status: "complete" as const,
+                    completedAt: s.completedAt ?? new Date().toISOString(),
+                  }))
+                : INITIAL_STAGES.map((s) => ({ ...s, status: "complete" as const }));
+            return { kind: "done_blueprint", content: event.content, model: event.model, stages: finalStages };
+          });
           setIsStreaming(false);
-          // Refresh conversation data
           queryClient.invalidateQueries({ queryKey: getGetConversationQueryKey(conversationId) });
           queryClient.invalidateQueries({ queryKey: getListConversationsQueryKey() });
           onSuccess(conversationId);
-          // Auto-title on first message
           if (wasFirstRef.current) {
             renameMutation.mutate(
               { conversationId, data: { title: autoTitle(content) } },
@@ -432,9 +438,6 @@ export function PlannerWorkspace({ conversationId, messages, isFirstMessage, onS
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
   };
 
-  // Determine what the right panel shows
-  // If streaming or just done: show live/done state
-  // If idle and messages exist: show last blueprint from messages
   const renderContent = () => {
     if (phase.kind === "streaming") {
       return (
@@ -471,7 +474,7 @@ export function PlannerWorkspace({ conversationId, messages, isFirstMessage, onS
       );
     }
 
-    // Idle: render last blueprint from persisted messages if available
+    // Idle: render last blueprint from persisted messages
     const lastAssistant = [...messages].reverse().find((m) => m.role === "assistant");
     if (lastAssistant) {
       const metadata = lastAssistant.metadata as { module?: string; model?: string } | null;
@@ -485,10 +488,15 @@ export function PlannerWorkspace({ conversationId, messages, isFirstMessage, onS
     return null;
   };
 
+  // Timeline is shown when streaming or when done with a blueprint
   const showTimeline = phase.kind === "streaming" || phase.kind === "done_blueprint";
-  const currentStages: StageState[] = phase.kind === "streaming"
-    ? phase.stages
-    : INITIAL_STAGES.map((s) => ({ ...s, status: phase.kind === "done_blueprint" ? "complete" : "pending" as const }));
+
+  const currentStages: StageState[] =
+    phase.kind === "streaming"
+      ? phase.stages
+      : phase.kind === "done_blueprint"
+      ? phase.stages
+      : INITIAL_STAGES.map((s) => ({ ...s, status: "pending" as const }));
 
   return (
     <div className="flex h-full flex-col min-w-0 overflow-hidden">
