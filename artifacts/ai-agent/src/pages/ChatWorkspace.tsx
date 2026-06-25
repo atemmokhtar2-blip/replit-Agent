@@ -50,10 +50,12 @@ function MessageBubble({ message }: { message: AIMessage }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(message.content).then(() => {
+    const doIt = () => {
       setCopied(true);
+      toast.success("Copied to clipboard");
       setTimeout(() => setCopied(false), 2000);
-    }).catch(() => {
+    };
+    navigator.clipboard.writeText(message.content).then(doIt).catch(() => {
       const el = document.createElement("textarea");
       el.value = message.content;
       el.style.position = "fixed";
@@ -62,8 +64,7 @@ function MessageBubble({ message }: { message: AIMessage }) {
       el.select();
       document.execCommand("copy");
       document.body.removeChild(el);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      doIt();
     });
   }, [message.content]);
 
@@ -88,7 +89,7 @@ function MessageBubble({ message }: { message: AIMessage }) {
             onClick={handleCopy}
             aria-label={copied ? "Copied!" : "Copy message"}
             title={copied ? "Copied!" : "Copy message"}
-            className="absolute right-2 top-2 rounded p-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 text-muted-foreground hover:text-foreground hover:bg-background/60"
+            className="absolute right-2 top-2 rounded p-0.5 opacity-100 sm:opacity-0 transition-opacity sm:group-hover:opacity-100 focus-visible:opacity-100 text-muted-foreground hover:text-foreground hover:bg-background/60"
           >
             {copied ? (
               <span className="flex items-center gap-1 text-[10px] font-semibold text-green-500 pr-0.5">

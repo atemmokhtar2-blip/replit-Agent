@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ChevronLeft, Play, Settings, Send, Loader2, Bot, User, Copy, Check } from "lucide-react";
+import { toast } from "sonner";
 
 // ── Workspace message bubble ────────────────────────────────────────────────────
 
@@ -23,10 +24,12 @@ function WorkspaceMessageBubble({ msg }: { msg: { id: string; role: string; cont
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(msg.content).then(() => {
+    const doIt = () => {
       setCopied(true);
+      toast.success("Copied to clipboard");
       setTimeout(() => setCopied(false), 2000);
-    }).catch(() => {
+    };
+    navigator.clipboard.writeText(msg.content).then(doIt).catch(() => {
       const el = document.createElement("textarea");
       el.value = msg.content;
       el.style.position = "fixed";
@@ -35,8 +38,7 @@ function WorkspaceMessageBubble({ msg }: { msg: { id: string; role: string; cont
       el.select();
       document.execCommand("copy");
       document.body.removeChild(el);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      doIt();
     });
   };
 
@@ -60,7 +62,7 @@ function WorkspaceMessageBubble({ msg }: { msg: { id: string; role: string; cont
             onClick={handleCopy}
             aria-label={copied ? "Copied!" : "Copy message"}
             title={copied ? "Copied!" : "Copy message"}
-            className="absolute right-1.5 top-1.5 rounded p-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100 text-muted-foreground hover:text-foreground hover:bg-background/60"
+            className="absolute right-1.5 top-1.5 rounded p-0.5 opacity-100 sm:opacity-0 transition-opacity sm:group-hover:opacity-100 focus-visible:opacity-100 text-muted-foreground hover:text-foreground hover:bg-background/60"
           >
             {copied ? (
               <span className="flex items-center gap-0.5 text-[9px] font-semibold text-green-500">

@@ -76,17 +76,14 @@ Features and capabilities to add after initial launch.
 
 IMPORTANT: Always output ALL 12 sections. Be thorough but concise. This plan will be directly consumed by future AI modules for automated project generation.`;
 
-const CONVERSATION_SYSTEM_PROMPT = `You are the AI Agent assistant — a friendly, conversational AI for the AI Agent platform.
-
-The platform helps users build websites, bots, SaaS platforms, dashboards, e-commerce stores, and more using AI automation.
+const CONVERSATION_SYSTEM_PROMPT = `You are a helpful, friendly AI assistant. Respond naturally and conversationally.
 
 Guidelines:
-- When greeted: respond warmly, introduce yourself briefly, and invite the user to describe a project they want to build
-- When asked who you are or what you do: explain naturally that you help turn software project ideas into detailed architecture plans
-- When asked what you can build: mention websites, bots, dashboards, SaaS platforms, mobile apps, e-commerce stores, and APIs
-- When thanked: respond warmly and naturally
-- Keep all responses short, friendly, and conversational (2-4 sentences maximum)
-- Never output numbered sections, architecture blueprints, or technical project plans
+- Reply naturally to greetings, small talk, and casual questions — just like a friendly person would
+- Do not introduce yourself as a platform or service unless directly asked who you are
+- If directly asked who you are or what you do, briefly explain you are an AI assistant that can also generate detailed architecture plans for software projects when the user describes something they want to build
+- Keep responses short and natural (1-3 sentences for simple greetings/chat)
+- Never output numbered sections or structured plans for casual conversation
 - Respond in the same language the user writes in`;
 
 // ── Intent classification patterns ─────────────────────────────────────────────
@@ -511,6 +508,12 @@ async function callOpenRouter(
 
 // ── Conversational response call ───────────────────────────────────────────────
 
+// Models tried in order for conversational responses (fast, low-token)
+const CONVERSATIONAL_MODELS = [
+  "moonshotai/kimi-k2",
+  "qwen/qwen3-coder",
+] as const;
+
 async function callOpenRouterConversational(
   messages: { role: string; content: string }[],
   apiKey: string,
@@ -524,51 +527,67 @@ async function callOpenRouterConversational(
 
   assertAsciiHeaders(requestHeaders);
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30_000);
+  let lastError: Error | undefined;
 
-  let response: Response;
-  try {
-    response = await fetch(OPENROUTER_URL, {
-      method: "POST",
-      headers: requestHeaders,
-      body: JSON.stringify({
-        model: "deepseek/deepseek-v3",
-        messages,
-        max_tokens: 300,
-        temperature: 0.7,
-        stream: false,
-      }),
-      signal: controller.signal,
-    });
-  } finally {
-    clearTimeout(timer);
+  for (const model of CONVERSATIONAL_MODELS) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30_000);
+
+    try {
+      let response: Response;
+      try {
+        response = await fetch(OPENROUTER_URL, {
+          method: "POST",
+          headers: requestHeaders,
+          body: JSON.stringify({
+            model,
+            messages,
+            max_tokens: 300,
+            temperature: 0.7,
+            stream: false,
+          }),
+          signal: controller.signal,
+        });
+      } finally {
+        clearTimeout(timer);
+      }
+
+      if (!response.ok) {
+        const errText = await response.text().catch(() => "(unreadable)");
+        const err = Object.assign(
+          new Error(`OpenRouter HTTP ${response.status}: ${errText.slice(0, 300)}`),
+          { status: response.status },
+        );
+        // 400 = invalid model — try next; non-400 errors — also try next
+        lastError = err;
+        console.warn(`[Planner] Conversational model ${model} failed: ${err.message.slice(0, 120)}`);
+        continue;
+      }
+
+      const data = (await response.json()) as Record<string, unknown>;
+      const choices = data["choices"] as
+        | { message: { content: string | null }; finish_reason: string }[]
+        | undefined;
+      const content = choices?.[0]?.message?.content?.trim();
+
+      if (!content) {
+        lastError = new Error("empty conversational response");
+        continue;
+      }
+
+      const resolvedModel =
+        typeof data["model"] === "string" ? data["model"] : model;
+
+      console.log(`[Planner] Conversational success — model=${resolvedModel}`);
+      return { content, model: resolvedModel };
+    } catch (err) {
+      clearTimeout(timer);
+      lastError = err instanceof Error ? err : new Error(String(err));
+      console.warn(`[Planner] Conversational model ${model} threw: ${lastError.message.slice(0, 120)}`);
+    }
   }
 
-  if (!response.ok) {
-    const errText = await response.text().catch(() => "(unreadable)");
-    throw Object.assign(
-      new Error(`OpenRouter HTTP ${response.status}: ${errText.slice(0, 300)}`),
-      { status: response.status },
-    );
-  }
-
-  const data = (await response.json()) as Record<string, unknown>;
-
-  const choices = data["choices"] as
-    | { message: { content: string | null }; finish_reason: string }[]
-    | undefined;
-
-  const content = choices?.[0]?.message?.content?.trim();
-
-  if (!content) {
-    throw new Error("empty conversational response");
-  }
-
-  const resolvedModel =
-    typeof data["model"] === "string" ? data["model"] : "deepseek/deepseek-v3";
-
-  return { content, model: resolvedModel };
+  throw lastError ?? new Error("all conversational models failed");
 }
 
 // ── Main export ────────────────────────────────────────────────────────────────
@@ -728,22 +747,11 @@ export async function runPlanner(
 // ── Response builders ──────────────────────────────────────────────────────────
 
 function buildGreetingFallback(): string {
-  return `Hello! I'm the **AI Agent** assistant — I help you turn ideas into structured architecture plans for websites, bots, dashboards, SaaS platforms, and more.
-
-To get started, describe the project you'd like to build. For example:
-- *"Build a restaurant website with online ordering"*
-- *"Create a Telegram download bot"*
-- *"Make a SaaS analytics dashboard"*
-
-Add your **OPENROUTER_API_KEY** in Replit Secrets to enable full AI responses.`;
+  return `Hey! Add your **OPENROUTER_API_KEY** in Replit Secrets to enable AI responses. Once set, restart the backend and I'll be ready to chat.`;
 }
 
 function buildConversationFallback(): string {
-  return `I'm the **AI Agent** assistant — here to help you plan and architect software projects using AI.
-
-I can generate comprehensive architecture plans for websites, bots, SaaS platforms, dashboards, and more.
-
-Add your **OPENROUTER_API_KEY** in Replit Secrets to enable full conversational responses. Then just describe a project and I'll create a detailed plan for it!`;
+  return `To enable AI responses, add your **OPENROUTER_API_KEY** in Replit Secrets and restart the backend.`;
 }
 
 function buildConfigurationGuide(userMessage: string): string {
