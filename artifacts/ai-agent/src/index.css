@@ -318,4 +318,30 @@
     opacity: 0;
     animation: agent-cell-in 0.22s ease-out forwards;
   }
+
+  /* Task Execution Panel — shimmer progress effect */
+  @keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(400%); }
+  }
+
+  .animate-shimmer {
+    animation: shimmer 1.8s ease-in-out infinite;
+  }
+
+  /* Task Details Drawer — slide in from right */
+  @keyframes slide-in-right {
+    from {
+      transform: translateX(100%);
+      opacity: 0;
+    }
+    to {
+      transform: translateX(0);
+      opacity: 1;
+    }
+  }
+
+  .animate-slide-in-right {
+    animation: slide-in-right 0.22s ease-out forwards;
+  }
 }

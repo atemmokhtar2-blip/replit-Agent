@@ -6,6 +6,8 @@ import { ThemeProvider } from "@/components/ThemeProvider";
 import { AuthProvider } from "@/components/AuthProvider";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AppLayout } from "@/components/AppLayout";
+import { TaskProvider } from "@/lib/task-store";
+import { TaskExecutionPanel } from "@/components/execution/TaskExecutionPanel";
 
 import NotFound from "@/pages/not-found";
 
@@ -166,12 +168,15 @@ function App() {
     <ThemeProvider defaultTheme="dark">
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
-          <TooltipProvider>
-            <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
-              <Router />
-              <Toaster />
-            </WouterRouter>
-          </TooltipProvider>
+          <TaskProvider>
+            <TooltipProvider>
+              <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+                <Router />
+                <Toaster />
+                <TaskExecutionPanel />
+              </WouterRouter>
+            </TooltipProvider>
+          </TaskProvider>
         </AuthProvider>
       </QueryClientProvider>
     </ThemeProvider>
