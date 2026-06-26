@@ -473,7 +473,7 @@ function LiveExecutionView({ taskId }: { taskId: string }) {
 
       {/* Output */}
       <AnimatePresence>
-        {(output || liveTask.output) && (
+        {!!(output || liveTask.output) && (
           <motion.div
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
@@ -503,11 +503,11 @@ function LiveExecutionView({ taskId }: { taskId: string }) {
       </AnimatePresence>
 
       {/* Pipeline summary */}
-      {liveTask.output?.spec && (
+      {!!(liveTask.output?.spec) && (
         <PipelineSummary
-          spec={liveTask.output.spec as Record<string, unknown>}
-          validation={liveTask.output.validation as Record<string, unknown> | undefined}
-          phasePlan={liveTask.output.phasePlan as unknown[] | undefined}
+          spec={liveTask.output!.spec as Record<string, unknown>}
+          validation={liveTask.output!.validation as Record<string, unknown> | undefined}
+          phasePlan={liveTask.output!.phasePlan as unknown[] | undefined}
         />
       )}
     </div>
