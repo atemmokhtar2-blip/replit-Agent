@@ -789,10 +789,10 @@ router.get("/projects/:conversationId/files/download", async (req, res) => {
 });
 
 // GET /ai/projects/:conversationId/file/* — serve individual generated file
-router.get("/projects/:conversationId/file/*", async (req, res) => {
+router.get("/projects/:conversationId/file/{*filePath}", async (req, res) => {
   const userId = req.user!.sub;
   const { conversationId } = req.params as { conversationId: string };
-  const filePath = (req.params as unknown as { "0"?: string })["0"] ?? "";
+  const filePath = (req.params as unknown as { filePath?: string })["filePath"] ?? "";
 
   const [conv] = await db
     .select({ id: aiConversationsTable.id })
