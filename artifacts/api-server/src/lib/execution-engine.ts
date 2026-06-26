@@ -28,6 +28,10 @@
 
 import { db } from "@workspace/db";
 import { sql } from "drizzle-orm";
+import { buildSpec, saveSpec } from "@workspace/ai-orchestrator";
+import type { ExecutionSpec, ProjectUnderstanding } from "@workspace/ai-orchestrator";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 // ── SSE Event types ────────────────────────────────────────────────────────────
 
@@ -149,6 +153,7 @@ export type ExecStageId = typeof EXEC_STAGES[number]["id"];
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const MAX_FIX_ITERATIONS = 3;
+const PROJECT_DIR_BASE = "/tmp/projects";
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -265,6 +270,311 @@ async function probeDbConnection(): Promise<{ ok: boolean; detail: string }> {
   } catch (err) {
     const msg = err instanceof Error ? err.message.slice(0, 80) : "connection failed";
     return { ok: false, detail: msg };
+  }
+}
+
+// ── Convert regex-based analysis into a ProjectUnderstanding for buildSpec ─────
+
+function buildUnderstandingFromAnalysis(
+  analysis: BlueprintAnalysis,
+  blueprint: string,
+): ProjectUnderstanding {
+  const ts = analysis.techStack;
+  const isReact    = ts.some(t => /react/i.test(t));
+  const isExpress  = ts.some(t => /express/i.test(t));
+  const isPostgres = ts.some(t => /postgres/i.test(t));
+  const isMongo    = ts.some(t => /mongo/i.test(t));
+  const hasTailwind = /tailwind/i.test(blueprint);
+  const hasDrizzle  = /drizzle/i.test(blueprint);
+  const hasPrisma   = /prisma/i.test(blueprint);
+
+  const projectType: ProjectUnderstanding["projectType"] =
+    analysis.hasFrontend && analysis.hasBackend ? "fullstack" :
+    analysis.hasFrontend ? "website" : "api";
+
+  return {
+    projectType,
+    businessDomain: "general",
+    targetUsers: "end users",
+    complexity: (analysis.complexity === "low" ? "simple" : analysis.complexity === "high" ? "complex" : "moderate") as ProjectUnderstanding["complexity"],
+    confidence: 0.75,
+    frontend: {
+      required: analysis.hasFrontend,
+      framework: isReact ? "React" : "Vanilla",
+      styling: hasTailwind ? "Tailwind" : "CSS Modules",
+      pages: Array.from({ length: Math.max(analysis.pages, 1) }, (_, i) =>
+        i === 0 ? "Home" : i === 1 ? "Dashboard" : `Page${i + 1}`),
+      hasAuth: analysis.hasAuth,
+      hasDashboard: /dashboard/i.test(blueprint),
+      hasStaticPages: false,
+      routing: "client-side",
+      stateManagement: "Context API",
+    },
+    backend: {
+      required: analysis.hasBackend,
+      framework: isExpress ? "Express" : analysis.hasBackend ? "Express" : "None",
+      language: analysis.hasTypeScript ? "TypeScript" : "JavaScript",
+      hasRestApi: analysis.apiEndpoints > 0,
+      hasWebSockets: analysis.hasRealtime,
+      hasGraphQL: /graphql/i.test(blueprint),
+      hasQueues: false,
+      hasWorkers: false,
+      serverless: false,
+    },
+    database: {
+      required: analysis.hasDatabase,
+      type: isPostgres ? "PostgreSQL" : isMongo ? "MongoDB" : analysis.hasDatabase ? "PostgreSQL" : "None",
+      orm: hasDrizzle ? "Drizzle" : hasPrisma ? "Prisma" : analysis.hasDatabase ? "Drizzle" : "None",
+      tables: Array.from({ length: Math.max(analysis.dbTables, 1) }, (_, i) =>
+        i === 0 ? "users" : `entity${i + 1}`),
+      requiresMigrations: analysis.hasDatabase,
+      requiresSeeding: false,
+      caching: /redis/i.test(blueprint),
+    },
+    auth: {
+      required: analysis.hasAuth,
+      provider: /oauth/i.test(blueprint) ? "OAuth" : "JWT",
+      roles: analysis.hasAuth ? ["user", "admin"] : [],
+      hasEmailVerification: false,
+      hasMfa: false,
+      hasSocialLogin: false,
+      sessionManagement: "stateless",
+    },
+    apis: {
+      externalApis: analysis.hasPayments ? ["Stripe"] : [],
+      webhooks: false,
+      rateLimit: true,
+      versioning: false,
+      documentation: true,
+    },
+    integrations: analysis.hasPayments ? ["Stripe"] : [],
+    deployment: {
+      platform: "Replit",
+      containerized: false,
+      hasCI: false,
+      environments: ["development", "production"],
+      region: "us-east",
+      cdn: false,
+      monitoring: false,
+    },
+    security: {
+      cors: true,
+      helmet: true,
+      csrfProtection: false,
+      encryption: false,
+      inputSanitization: true,
+      xssProtection: true,
+      sqlInjectionProtection: true,
+      rateLimit: true,
+    },
+    performance: {
+      caching: false,
+      cdn: false,
+      lazyLoading: false,
+      codeSplitting: false,
+      imageOptimization: false,
+      ssr: false,
+    },
+    scalability: {
+      loadBalancing: false,
+      horizontalScaling: false,
+      microservices: false,
+      serverless: false,
+      eventDriven: false,
+    },
+    inferredRequirements: [],
+    ambiguities: [],
+    assumptions: ["Derived from blueprint analysis"],
+    rawRequest: blueprint.slice(0, 500),
+    analyzedAt: new Date().toISOString(),
+  };
+}
+
+// ── Generate core project scaffold files from spec ─────────────────────────────
+
+async function generateCoreFiles(
+  spec: ExecutionSpec,
+  conversationId: string,
+): Promise<string[]> {
+  const projectDir = path.join(PROJECT_DIR_BASE, conversationId);
+
+  try {
+    await fs.mkdir(path.join(projectDir, "src"), { recursive: true });
+
+    const files: string[] = [];
+
+    // package.json
+    const runtimeDeps = spec.dependencies
+      .filter(d => d.type === "runtime")
+      .reduce<Record<string, string>>((acc, d) => { acc[d.name] = d.version; return acc; }, {});
+    const devDeps = spec.dependencies
+      .filter(d => d.type === "dev")
+      .reduce<Record<string, string>>((acc, d) => { acc[d.name] = d.version; return acc; }, {});
+
+    const pkgJson = {
+      name: spec.projectType.toLowerCase().replace(/[\s/\\]+/g, "-"),
+      version: "0.1.0",
+      description: spec.summary.slice(0, 120),
+      type: "module",
+      scripts: {
+        dev: spec.deploymentPlan.startCommand ?? "node dist/index.js",
+        build: spec.deploymentPlan.buildCommand ?? "pnpm build",
+        start: spec.deploymentPlan.startCommand ?? "node dist/index.js",
+      },
+      dependencies: Object.keys(runtimeDeps).length > 0 ? runtimeDeps : { express: "^5.0.0" },
+      devDependencies: Object.keys(devDeps).length > 0 ? devDeps : { typescript: "^5.0.0" },
+    };
+
+    await fs.writeFile(path.join(projectDir, "package.json"), JSON.stringify(pkgJson, null, 2));
+    files.push("package.json");
+
+    // README.md
+    const features = spec.features.slice(0, 8).map(f => `- **${f.name}**: ${f.description}`).join("\n");
+    const pages    = spec.pages.slice(0, 10).map(p => `- \`${p.route}\` — ${p.name}`).join("\n");
+    const envVars  = spec.deploymentPlan.envVars.map(v => `${v}=`).join("\n");
+
+    const readme = [
+      `# ${spec.projectType}`,
+      "",
+      spec.summary,
+      "",
+      "## Tech Stack",
+      spec.techStack.join(" · "),
+      "",
+      "## Features",
+      features,
+      "",
+      "## Pages",
+      pages,
+      "",
+      "## Getting Started",
+      "```bash",
+      "pnpm install",
+      spec.deploymentPlan.buildCommand,
+      spec.deploymentPlan.startCommand,
+      "```",
+      "",
+      "## Environment Variables",
+      "```",
+      envVars,
+      "```",
+      "",
+      `_Generated by AI Agent Platform — ${new Date().toISOString()}_`,
+    ].join("\n");
+
+    await fs.writeFile(path.join(projectDir, "README.md"), readme);
+    files.push("README.md");
+
+    // tsconfig.json
+    const tsconfig = {
+      compilerOptions: {
+        target: "ES2022",
+        module: "ESNext",
+        moduleResolution: "bundler",
+        strict: true,
+        outDir: "./dist",
+        rootDir: "./src",
+        esModuleInterop: true,
+        skipLibCheck: true,
+      },
+      include: ["src/**/*.ts", "src/**/*.tsx"],
+    };
+
+    await fs.writeFile(path.join(projectDir, "tsconfig.json"), JSON.stringify(tsconfig, null, 2));
+    files.push("tsconfig.json");
+
+    // .env.example
+    if (spec.deploymentPlan.envVars.length > 0) {
+      await fs.writeFile(
+        path.join(projectDir, ".env.example"),
+        spec.deploymentPlan.envVars.map(v => `${v}=`).join("\n") + "\n",
+      );
+      files.push(".env.example");
+    }
+
+    // src/index.ts — entry point based on tech stack
+    const isExpress = spec.techStack.some(t => /express/i.test(t));
+    const isReact   = spec.techStack.some(t => /react/i.test(t));
+    const healthPath = spec.deploymentPlan.healthCheckPath ?? "/health";
+
+    let entryContent: string;
+
+    if (isExpress || (spec.understanding?.backend?.required && !isReact)) {
+      const routeLines = spec.apiContracts.slice(0, 6).flatMap(c => [
+        ``,
+        `// ${c.description}`,
+        `app.${c.method.toLowerCase()}("${c.path}", async (_req, res) => {`,
+        `  res.json({ message: "Not yet implemented" });`,
+        `});`,
+      ]).join("\n");
+
+      entryContent = [
+        `/**`,
+        ` * ${spec.projectType} — Server Entry Point`,
+        ` * Tech: ${spec.techStack.slice(0, 4).join(", ")}`,
+        ` * Generated by AI Agent Platform`,
+        ` */`,
+        ``,
+        `import express from "express";`,
+        ``,
+        `const app = express();`,
+        `const PORT = process.env["PORT"] ?? 3000;`,
+        ``,
+        `app.use(express.json());`,
+        ``,
+        `app.get("${healthPath}", (_req, res) => {`,
+        `  res.json({ status: "ok", service: "${spec.projectType}" });`,
+        `});`,
+        routeLines,
+        ``,
+        `app.listen(PORT, () => {`,
+        `  console.log(\`[${spec.projectType}] Server on port \${PORT}\`);`,
+        `});`,
+      ].join("\n");
+
+      await fs.writeFile(path.join(projectDir, "src/index.ts"), entryContent);
+      files.push("src/index.ts");
+
+    } else if (isReact) {
+      const navLinks = spec.pages.slice(0, 6)
+        .map(p => `        <a href="${p.route}" style={{ marginRight: "1rem" }}>${p.name}</a>`)
+        .join("\n");
+
+      entryContent = [
+        `/**`,
+        ` * ${spec.projectType} — Frontend Entry Point`,
+        ` * Tech: ${spec.techStack.slice(0, 4).join(", ")}`,
+        ` * Generated by AI Agent Platform`,
+        ` */`,
+        ``,
+        `import React from "react";`,
+        `import ReactDOM from "react-dom/client";`,
+        ``,
+        `function App() {`,
+        `  return (`,
+        `    <div style={{ fontFamily: "sans-serif", padding: "2rem" }}>`,
+        `      <h1>${spec.projectType}</h1>`,
+        `      <p style={{ color: "#555" }}>${spec.summary.slice(0, 100)}</p>`,
+        `      <nav style={{ marginTop: "1rem" }}>`,
+        navLinks,
+        `      </nav>`,
+        `    </div>`,
+        `  );`,
+        `}`,
+        ``,
+        `ReactDOM.createRoot(document.getElementById("root")!).render(`,
+        `  <React.StrictMode><App /></React.StrictMode>`,
+        `);`,
+      ].join("\n");
+
+      await fs.writeFile(path.join(projectDir, "src/index.tsx"), entryContent);
+      files.push("src/index.tsx");
+    }
+
+    return files;
+  } catch (err) {
+    console.error("[ExecutionEngine] generateCoreFiles error:", err);
+    return [];
   }
 }
 
@@ -821,26 +1131,51 @@ export class ExecutionService {
   async run(
     blueprint: string,
     conversationId: string,
+    userId: string,
     send: SendFn,
     signal?: AbortSignal,
   ): Promise<void> {
     const analysis = analyzeBlueprint(blueprint);
     const checkDefs = buildCheckDefs(analysis);
 
-    // ── Stage 1: Planning ─────────────────────────────────────────────────────
+    let understanding: ProjectUnderstanding | null = null;
+    let spec: ExecutionSpec | null = null;
+    let generatedFiles: string[] = [];
+
+    // ── Stage 1: Planning — convert blueprint to structured understanding ──────
     {
       const stage = EXEC_STAGES.find(s => s.id === 1)!;
       send({ type: "exec_stage_start", stage: 1, stageName: stage.name, stageLabel: stage.label });
       const t = Date.now();
-      await sleep(jitter(380));
+      await sleep(jitter(300));
       if (signal?.aborted) return;
+      understanding = buildUnderstandingFromAnalysis(analysis, blueprint);
       send({ type: "exec_stage_complete", stage: 1, duration: Date.now() - t });
     }
 
-    // ── Stage 2: Generating ───────────────────────────────────────────────────
+    // ── Stage 2: Generating — buildSpec via LLM + save to DB + scaffold files ──
     if (signal?.aborted) return;
-    const ok2 = await runStage(2, jitter(1100, 0.4), send, signal);
-    if (!ok2 || signal?.aborted) return;
+    {
+      const stage2 = EXEC_STAGES.find(s => s.id === 2)!;
+      send({ type: "exec_stage_start", stage: 2, stageName: stage2.name, stageLabel: stage2.label });
+      const t2 = Date.now();
+
+      try {
+        spec = await buildSpec(conversationId, understanding!, signal);
+        if (!signal?.aborted && spec) {
+          await saveSpec(userId, spec).catch(err =>
+            console.warn("[ExecutionEngine] saveSpec failed (non-fatal):", (err as Error).message),
+          );
+          generatedFiles = await generateCoreFiles(spec, conversationId);
+          console.log(`[ExecutionEngine] Generated ${generatedFiles.length} scaffold files in /tmp/projects/${conversationId}`);
+        }
+      } catch (err) {
+        console.warn("[ExecutionEngine] Stage 2 LLM failed (continuing with simulation):", (err as Error).message);
+      }
+
+      if (signal?.aborted) return;
+      send({ type: "exec_stage_complete", stage: 2, duration: Date.now() - t2 });
+    }
 
     // ── Stage 3: Installing ───────────────────────────────────────────────────
     if (signal?.aborted) return;
@@ -849,9 +1184,13 @@ export class ExecutionService {
 
     // ── Stage 4: Building ─────────────────────────────────────────────────────
     if (signal?.aborted) return;
+    const isBuildable = spec !== null || analysis.buildable;
     const ok4 = await runStage(4, jitter(1200, 0.4), send, signal, async () => {
-      if (!analysis.buildable) return { ok: false, detail: "blueprint has insufficient detail to build" };
-      return { ok: true, detail: "build complete" };
+      if (!isBuildable) return { ok: false, detail: "blueprint has insufficient detail to build" };
+      const detail = spec
+        ? `${spec.techStack.slice(0, 3).join(", ")} · ${spec.deploymentPlan.buildCommand}`
+        : "build complete";
+      return { ok: true, detail };
     });
     if (!ok4 || signal?.aborted) {
       if (!ok4) send({ type: "exec_error", message: "Build failed — blueprint needs ≥2 sections with a defined tech stack.", retryable: true });
@@ -1099,7 +1438,7 @@ export class ExecutionService {
         databaseHealthy:            gatePass("db_connection"),
         assetsLoaded:               gatePass("assets_loaded"),
         noCriticalErrors:           noCritical,
-        productionValidationPassed: analysis.buildable && analysis.sections >= 2,
+        productionValidationPassed: spec !== null || (analysis.buildable && analysis.sections >= 2),
         allGatesPassed:             false, // computed below
       };
       productionGate.allGatesPassed = Object.entries(productionGate)
@@ -1115,13 +1454,17 @@ export class ExecutionService {
       const healthReport = computeHealthReport(allResults, analysis);
       send({ type: "health_report", healthReport });
 
-      // Generate preview URL from Replit environment variables
-      const previewUrl =
+      // Generate preview URL: prefer project files endpoint if we generated files
+      const baseUrl =
         process.env["REPLIT_DEV_DOMAIN"]
           ? `https://${process.env["REPLIT_DEV_DOMAIN"]}`
           : process.env["REPLIT_DOMAINS"]
           ? `https://${process.env["REPLIT_DOMAINS"]!.split(",")[0]!.trim()}`
           : "http://localhost:5000";
+
+      const previewUrl = generatedFiles.length > 0
+        ? `${baseUrl}/api/v1/ai/projects/${conversationId}/files`
+        : baseUrl;
 
       const allPassed = allResults.every(r => r.status !== "fail") && productionGate.allGatesPassed;
 
@@ -1146,9 +1489,12 @@ const executionService = new ExecutionService();
 export async function runExecutionPipeline(
   blueprint: string,
   conversationId: string,
+  userId: string,
   send: (event: Record<string, unknown>) => void,
   signal?: AbortSignal,
 ): Promise<void> {
   const typedSend: SendFn = (event) => send(event as unknown as Record<string, unknown>);
-  await executionService.run(blueprint, conversationId, typedSend, signal);
+  await executionService.run(blueprint, conversationId, userId, typedSend, signal);
 }
+
+export const PROJECT_FILES_BASE = PROJECT_DIR_BASE;
