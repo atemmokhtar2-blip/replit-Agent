@@ -1,0 +1,23 @@
+{
+  "name": "@workspace/repo-agent",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --build",
+    "typecheck": "tsc --build --noEmit"
+  },
+  "dependencies": {
+    "@workspace/github": "workspace:*",
+    "execa": "^9.5.2",
+    "diff": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/diff": "^7.0.0",
+    "@types/node": "catalog:",
+    "typescript": "~5.9.3"
+  }
+}
