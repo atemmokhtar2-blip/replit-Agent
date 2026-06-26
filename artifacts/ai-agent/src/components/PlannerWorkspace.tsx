@@ -7,6 +7,7 @@
  *  - A conversation reply area for non-project responses
  *  - Past blueprint display for already-completed conversations
  *  - Execution summary + file tree preview after blueprint generation
+ *  - Built-in Preview for HTML/CSS/JS content in the blueprint
  *
  * Connected to real planner execution via SSE streaming — no fake progress.
  */
@@ -62,6 +63,256 @@ function formatTime(iso: string) {
 
 function autoTitle(content: string) {
   return content.slice(0, 60).trim() || "New conversation";
+}
+
+// ── Preview extraction ─────────────────────────────────────────────────────────
+
+interface ExtractedCode {
+  html: string | null;
+  css: string | null;
+  js: string | null;
+}
+
+function extractCodeBlocks(content: string): ExtractedCode {
+  const blocks: { lang: string; code: string }[] = [];
+  const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
+  let m: RegExpExecArray | null;
+  while ((m = codeBlockRegex.exec(content)) !== null) {
+    blocks.push({ lang: (m[1] ?? "").toLowerCase(), code: m[2] ?? "" });
+  }
+
+  const html = blocks.find((b) => b.lang === "html")?.code ?? null;
+  const css = blocks.find((b) => b.lang === "css" || b.lang === "scss" || b.lang === "style")?.code ?? null;
+  const js = blocks.find((b) => b.lang === "js" || b.lang === "javascript" || b.lang === "typescript" || b.lang === "ts")?.code ?? null;
+
+  return { html, css, js };
+}
+
+function buildPreviewDocument(extracted: ExtractedCode): string | null {
+  const { html, css, js } = extracted;
+  if (!html && !css && !js) return null;
+
+  if (html) {
+    // If html block already has full document structure, inject css/js
+    if (html.trim().toLowerCase().startsWith("<!doctype") || html.trim().toLowerCase().startsWith("<html")) {
+      let doc = html;
+      if (css && !doc.includes("</head>")) {
+        doc += `\n<style>\n${css}\n</style>`;
+      } else if (css) {
+        doc = doc.replace("</head>", `<style>\n${css}\n</style>\n</head>`);
+      }
+      if (js && !doc.includes("</body>")) {
+        doc += `\n<script>\n${js}\n</script>`;
+      } else if (js) {
+        doc = doc.replace("</body>", `<script>\n${js}\n</script>\n</body>`);
+      }
+      return doc;
+    }
+
+    // Partial HTML — wrap in full document
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Preview</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 1rem; }
+    ${css ?? ""}
+  </style>
+</head>
+<body>
+${html}
+${js ? `<script>\n${js}\n</script>` : ""}
+</body>
+</html>`;
+  }
+
+  // CSS or JS only
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Preview</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 1rem; background: #f8f9fa; }
+    ${css ?? ""}
+  </style>
+</head>
+<body>
+  <p style="color:#888;font-size:12px;padding:8px">No HTML content found — showing CSS/JS only.</p>
+  ${js ? `<script>\n${js}\n</script>` : ""}
+</body>
+</html>`;
+}
+
+// ── Preview Modal ──────────────────────────────────────────────────────────────
+
+interface PreviewModalProps {
+  content: string;
+  onClose: () => void;
+}
+
+function PreviewModal({ content, onClose }: PreviewModalProps) {
+  const extracted = extractCodeBlocks(content);
+  const [docContent, setDocContent] = useState(() => buildPreviewDocument(extracted));
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [iframeKey, setIframeKey] = useState(0);
+  const [logs, setLogs] = useState<string[]>([]);
+  const [showLogs, setShowLogs] = useState(false);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  useEffect(() => {
+    if (!docContent) return;
+    const blob = new Blob([docContent], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    setBlobUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [docContent, iframeKey]);
+
+  const handleRestart = () => {
+    setDocContent(buildPreviewDocument(extractCodeBlocks(content)));
+    setIframeKey((k) => k + 1);
+    setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] Restarted preview`]);
+  };
+
+  const handleOpenTab = () => {
+    if (blobUrl) window.open(blobUrl, "_blank");
+  };
+
+  // Trap Escape key
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [onClose]);
+
+  if (!docContent) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm">
+        <div className="w-full max-w-md rounded-xl border border-border bg-card p-6 text-center shadow-2xl">
+          <div className="text-2xl mb-3">🔍</div>
+          <h3 className="text-sm font-semibold text-foreground mb-2">No previewable content found</h3>
+          <p className="text-xs text-muted-foreground mb-4 leading-relaxed">
+            The blueprint doesn't contain HTML, CSS, or JavaScript code blocks that can be previewed.
+            Ask the AI to generate a concrete implementation with code.
+          </p>
+          <Button onClick={onClose} size="sm">Close</Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-background/95 backdrop-blur-sm">
+      {/* Toolbar */}
+      <div className="flex flex-shrink-0 items-center gap-2 border-b border-border bg-card/80 px-3 py-2">
+        {/* Left: status */}
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="flex h-5 w-5 items-center justify-center rounded bg-green-500/15">
+            <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+          </div>
+          <span className="text-xs font-medium text-foreground truncate">Blueprint Preview</span>
+          <span className="text-xs text-muted-foreground hidden sm:block">· HTML/CSS/JS extracted from blueprint</span>
+        </div>
+
+        {/* Spacer */}
+        <div className="flex-1" />
+
+        {/* Right: actions */}
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setShowLogs((v) => !v)}
+            className={`flex items-center gap-1.5 rounded px-2 py-1 text-[10px] transition-colors ${
+              showLogs
+                ? "bg-primary/10 text-primary"
+                : "text-muted-foreground hover:text-foreground hover:bg-muted"
+            }`}
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4">
+              <rect x="0.5" y="0.5" width="9" height="9" rx="1" />
+              <line x1="2.5" y1="3.5" x2="7.5" y2="3.5" />
+              <line x1="2.5" y1="5.5" x2="7.5" y2="5.5" />
+              <line x1="2.5" y1="7.5" x2="5" y2="7.5" />
+            </svg>
+            Logs {logs.length > 0 && `(${logs.length})`}
+          </button>
+          <button
+            onClick={handleRestart}
+            className="flex items-center gap-1.5 rounded px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            title="Restart preview"
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+              <path d="M8.5 1.5A4.5 4.5 0 1 0 9 5" />
+              <polyline points="9,0 9,1.5 7.5,1.5" />
+            </svg>
+            Restart
+          </button>
+          <button
+            onClick={handleOpenTab}
+            className="flex items-center gap-1.5 rounded px-2 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            title="Open in new tab"
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+              <path d="M4.5 1H1.5a1 1 0 00-1 1v6.5a1 1 0 001 1H8a1 1 0 001-1V5.5" />
+              <path d="M6.5 1H9v2.5M9 1L5.5 4.5" />
+            </svg>
+            Open
+          </button>
+          <button
+            onClick={onClose}
+            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            title="Close preview"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+              <line x1="1" y1="1" x2="11" y2="11" />
+              <line x1="11" y1="1" x2="1" y2="11" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      {/* Content area */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        {/* Iframe */}
+        <div className="relative flex-1 min-w-0 bg-white dark:bg-neutral-900">
+          {blobUrl && (
+            <iframe
+              key={iframeKey}
+              ref={iframeRef}
+              src={blobUrl}
+              title="Blueprint Preview"
+              className="absolute inset-0 h-full w-full border-0"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+              onLoad={() => setLogs((prev) => [...prev, `[${new Date().toLocaleTimeString()}] Preview loaded`])}
+            />
+          )}
+        </div>
+
+        {/* Logs panel */}
+        {showLogs && (
+          <div className="w-64 flex-shrink-0 border-l border-border bg-card overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between border-b border-border px-3 py-1.5">
+              <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Runtime Logs</span>
+              <button
+                onClick={() => setLogs([])}
+                className="text-[9px] text-muted-foreground/50 hover:text-muted-foreground"
+              >
+                Clear
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2 font-mono text-[10px] text-foreground/70 space-y-0.5">
+              {logs.length === 0 ? (
+                <span className="text-muted-foreground/40">No log entries yet</span>
+              ) : (
+                logs.map((l, i) => <div key={i} className="leading-relaxed">{l}</div>)
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 // ── Blueprint section viewer ───────────────────────────────────────────────────
@@ -147,11 +398,38 @@ function EmptyState({ onNewChat }: { onNewChat?: () => void }) {
   );
 }
 
+// ── Preview button ─────────────────────────────────────────────────────────────
+
+function PreviewButton({ content, onOpen }: { content: string; onOpen: () => void }) {
+  const { html, css, js } = extractCodeBlocks(content);
+  const hasCode = !!(html || css || js);
+
+  return (
+    <button
+      onClick={onOpen}
+      title={hasCode ? "Preview the generated code" : "No previewable code found in this blueprint"}
+      className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium border transition-all ${
+        hasCode
+          ? "border-green-500/30 bg-green-500/10 text-green-600 dark:text-green-400 hover:bg-green-500/20 hover:border-green-500/50"
+          : "border-border text-muted-foreground/50 cursor-default"
+      }`}
+    >
+      {/* Play icon */}
+      <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor">
+        <polygon points="2,1 9,5 2,9" />
+      </svg>
+      Preview
+      {!hasCode && <span className="text-[9px] opacity-60 ml-0.5">(no code)</span>}
+    </button>
+  );
+}
+
 // ── Blueprint display (past / completed) ──────────────────────────────────────
 
 function PastBlueprintView({ content, model }: { content: string; model?: string }) {
   const sections = parseBlueprint(content);
   const [copiedAll, setCopiedAll] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const handleCopyAll = () => {
     navigator.clipboard.writeText(content).then(() => {
@@ -166,34 +444,43 @@ function PastBlueprintView({ content, model }: { content: string; model?: string
 
   if (sections.length === 0) {
     return (
-      <div className="rounded-lg border border-border bg-card p-4 text-xs text-foreground/80 whitespace-pre-wrap font-mono">
-        {content}
-      </div>
+      <>
+        <div className="rounded-lg border border-border bg-card p-4 text-xs text-foreground/80 whitespace-pre-wrap font-mono">
+          {content}
+        </div>
+        {previewOpen && <PreviewModal content={content} onClose={() => setPreviewOpen(false)} />}
+      </>
     );
   }
 
   return (
-    <div className="flex flex-col gap-0">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <BlueprintCore size={24} color="#22c55e" complete active />
-          <span className="text-xs font-semibold text-foreground">Architecture Blueprint</span>
-          {model && <span className="text-[10px] text-muted-foreground/50">via {model.split("/").pop()}</span>}
+    <>
+      <div className="flex flex-col gap-0">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <BlueprintCore size={24} color="#22c55e" complete active />
+            <span className="text-xs font-semibold text-foreground">Architecture Blueprint</span>
+            {model && <span className="text-[10px] text-muted-foreground/50">via {model.split("/").pop()}</span>}
+          </div>
+          <div className="flex items-center gap-2">
+            <PreviewButton content={content} onOpen={() => setPreviewOpen(true)} />
+            <button
+              onClick={handleCopyAll}
+              className="rounded px-2.5 py-1 text-[10px] border border-border text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
+            >
+              {copiedAll ? <span className="text-green-400">Copied All</span> : "Copy All"}
+            </button>
+          </div>
         </div>
-        <button
-          onClick={handleCopyAll}
-          className="rounded px-2.5 py-1 text-[10px] border border-border text-muted-foreground hover:text-foreground hover:border-primary/40 transition-colors"
-        >
-          {copiedAll ? <span className="text-green-400">Copied All</span> : "Copy All"}
-        </button>
+        <div className="flex flex-col gap-2">
+          {sections.map((s) => (
+            <SectionCard key={s.section} section={s} />
+          ))}
+        </div>
+        <ExecutionPanel blueprint={content} model={model} />
       </div>
-      <div className="flex flex-col gap-2">
-        {sections.map((s) => (
-          <SectionCard key={s.section} section={s} />
-        ))}
-      </div>
-      <ExecutionPanel blueprint={content} model={model} />
-    </div>
+      {previewOpen && <PreviewModal content={content} onClose={() => setPreviewOpen(false)} />}
+    </>
   );
 }
 
@@ -301,6 +588,7 @@ export function PlannerWorkspace({ conversationId, messages, isFirstMessage, onS
   const [input, setInput] = useState("");
   const [phase, setPhase] = useState<WorkspacePhase>({ kind: "idle" });
   const [isStreaming, setIsStreaming] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const contentEndRef = useRef<HTMLDivElement>(null);
@@ -519,6 +807,9 @@ export function PlannerWorkspace({ conversationId, messages, isFirstMessage, onS
       ? phase.stages
       : INITIAL_STAGES.map((s) => ({ ...s, status: "pending" as const }));
 
+  // Live preview content (for done_blueprint phase)
+  const previewContent = phase.kind === "done_blueprint" ? phase.content : null;
+
   return (
     <div className="flex h-full flex-col min-w-0 overflow-hidden">
 
@@ -535,6 +826,19 @@ export function PlannerWorkspace({ conversationId, messages, isFirstMessage, onS
               </span>
             </div>
             <AgentTimeline stages={currentStages} />
+
+            {/* Preview shortcut in sidebar */}
+            {phase.kind === "done_blueprint" && (
+              <div className="mt-4 pt-4 border-t border-border/50">
+                <button
+                  onClick={() => setPreviewOpen(true)}
+                  className="w-full flex items-center gap-2 rounded-lg border border-green-500/25 bg-green-500/8 px-3 py-2.5 text-[11px] font-medium text-green-600 dark:text-green-400 hover:bg-green-500/15 transition-colors"
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="currentColor"><polygon points="2,1 9,5 2,9" /></svg>
+                  Open Preview
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -598,6 +902,11 @@ export function PlannerWorkspace({ conversationId, messages, isFirstMessage, onS
           </p>
         </div>
       </div>
+
+      {/* ── Preview Modal ─────────────────────────────────────────────────── */}
+      {previewOpen && previewContent && (
+        <PreviewModal content={previewContent} onClose={() => setPreviewOpen(false)} />
+      )}
     </div>
   );
 }

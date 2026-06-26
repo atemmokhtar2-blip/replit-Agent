@@ -2,7 +2,8 @@
  * ChatWorkspace — outer shell: sidebar + PlannerWorkspace.
  * Manages conversation lifecycle; delegates all AI interaction to PlannerWorkspace.
  *
- * Upgrades: search, pin (localStorage), relative timestamps, sidebar layout.
+ * Persistence: conversations and messages are stored in the database.
+ * After refresh, the last active conversation is automatically restored.
  */
 import { useState, useRef, useEffect, useCallback } from "react";
 import {
@@ -35,6 +36,7 @@ function relativeTime(iso: string): string {
 }
 
 const PINNED_KEY = "aiagent_pinned_convs";
+const LAST_CONV_KEY = "aiagent_last_conv_id";
 
 function loadPinned(): Set<string> {
   try {
@@ -49,6 +51,17 @@ function loadPinned(): Set<string> {
 function savePinned(pinned: Set<string>) {
   try {
     localStorage.setItem(PINNED_KEY, JSON.stringify([...pinned]));
+  } catch { /* ignore */ }
+}
+
+function loadLastConvId(): string | null {
+  try { return localStorage.getItem(LAST_CONV_KEY); } catch { return null; }
+}
+
+function saveLastConvId(id: string | null) {
+  try {
+    if (id) localStorage.setItem(LAST_CONV_KEY, id);
+    else localStorage.removeItem(LAST_CONV_KEY);
   } catch { /* ignore */ }
 }
 
@@ -238,13 +251,14 @@ function NoConversationState({ onCreate, isCreating }: { onCreate: () => void; i
 
 export default function ChatWorkspace() {
   const queryClient = useQueryClient();
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(() => loadLastConvId());
   const [isFirstMessage, setIsFirstMessage] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() =>
     typeof window !== "undefined" ? window.innerWidth >= 768 : true
   );
   const [search, setSearch] = useState("");
   const [pinned, setPinned] = useState<Set<string>>(() => loadPinned());
+  const [autoRestored, setAutoRestored] = useState(false);
   const searchRef = useRef<HTMLInputElement>(null);
 
   const { data: convList, isLoading: listLoading } = useListConversations();
@@ -255,6 +269,40 @@ export default function ChatWorkspace() {
   const createMutation = useCreateConversation();
   const renameMutation = useRenameConversation();
   const deleteMutation = useDeleteConversation();
+
+  // ── Auto-restore: select most recent conversation after load ─────────────────
+  useEffect(() => {
+    if (autoRestored || listLoading) return;
+    const items = convList?.items ?? [];
+    if (items.length === 0) {
+      setAutoRestored(true);
+      return;
+    }
+
+    const savedId = loadLastConvId();
+    if (savedId) {
+      // Verify the saved conversation still exists
+      const exists = items.some((c) => c.id === savedId);
+      if (exists) {
+        setSelectedId(savedId);
+        setAutoRestored(true);
+        return;
+      }
+    }
+
+    // Fall back to the most recently updated conversation
+    const mostRecent = items[0];
+    if (mostRecent) {
+      setSelectedId(mostRecent.id);
+      saveLastConvId(mostRecent.id);
+    }
+    setAutoRestored(true);
+  }, [convList, listLoading, autoRestored]);
+
+  // ── Persist selected conversation ID ─────────────────────────────────────────
+  useEffect(() => {
+    saveLastConvId(selectedId);
+  }, [selectedId]);
 
   const handleTogglePin = useCallback((id: string) => {
     setPinned((prev) => {
@@ -306,7 +354,12 @@ export default function ChatWorkspace() {
       {
         onSuccess: () => {
           queryClient.invalidateQueries({ queryKey: getListConversationsQueryKey() });
-          if (selectedId === conversationId) setSelectedId(null);
+          if (selectedId === conversationId) {
+            // Auto-select the next available conversation
+            const remaining = (convList?.items ?? []).filter((c) => c.id !== conversationId);
+            const next = remaining[0] ?? null;
+            setSelectedId(next?.id ?? null);
+          }
         },
         onError: () => toast.error("Failed to delete"),
       }
@@ -484,7 +537,9 @@ export default function ChatWorkspace() {
 
         {/* Workspace */}
         <div className="flex-1 overflow-hidden min-h-0">
-          {!selectedId ? (
+          {listLoading ? (
+            <div className="flex h-full items-center justify-center"><AIPulse size={32} color="#6366f1" active /></div>
+          ) : !selectedId ? (
             <NoConversationState onCreate={handleNewChat} isCreating={createMutation.isPending} />
           ) : convLoading ? (
             <div className="flex h-full items-center justify-center"><AIPulse size={32} color="#6366f1" active /></div>

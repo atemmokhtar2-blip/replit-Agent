@@ -22,6 +22,14 @@ export function createClient(pat: string): Octokit {
 }
 
 /**
+ * Create an unauthenticated Octokit instance for public GitHub API access.
+ * Rate-limited to 60 requests/hour (vs 5000/hour for authenticated).
+ */
+export function createPublicClient(): Octokit {
+  return new Octokit({ userAgent: "ai-agent-platform/1.0" });
+}
+
+/**
  * Verify a PAT is valid and return the authenticated user's profile.
  * Throws on invalid token.
  */

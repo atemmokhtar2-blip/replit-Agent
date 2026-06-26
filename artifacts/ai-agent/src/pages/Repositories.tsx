@@ -5,15 +5,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Card, CardContent } from "@/components/ui/card";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { toast } from "sonner";
 import {
   Loader2, GitFork, Plus, Trash2, RefreshCw, Search,
   Github, Star, Lock, GitBranch, Clock, ChevronRight,
-  AlertCircle, CheckCircle2, Package, Code2
+  AlertCircle, Package, Code2, Globe, KeyRound, ExternalLink
 } from "lucide-react";
 import { useLocation } from "wouter";
 
@@ -35,42 +35,57 @@ function ImportDialog({
   open,
   onClose,
   onImported,
+  githubConnected,
 }: {
   open: boolean;
   onClose: () => void;
   onImported: () => void;
+  githubConnected: boolean;
 }) {
   const [tab, setTab] = useState<"url" | "browse">("url");
   const [url, setUrl] = useState("");
+  const [pat, setPat] = useState("");
+  const [showPat, setShowPat] = useState(false);
   const [search, setSearch] = useState("");
   const [searchInput, setSearchInput] = useState("");
 
   const { data: myRepos, isLoading: loadingMyRepos } = useQuery({
     queryKey: ["github-repos"],
     queryFn: () => githubApi.repos({ per_page: 50 }),
-    enabled: open && tab === "browse",
+    enabled: open && tab === "browse" && githubConnected,
   });
 
   const { data: searchResults, isLoading: loadingSearch } = useQuery({
     queryKey: ["github-search", search],
     queryFn: () => githubApi.searchRepos(search),
-    enabled: open && tab === "browse" && search.length > 1,
+    enabled: open && tab === "browse" && githubConnected && search.length > 1,
   });
 
   const importMutation = useMutation({
     mutationFn: repositoriesApi.importRepo,
-    onSuccess: () => {
+    onSuccess: (_resp: { repository: unknown; message: string }) => {
       toast.success("Repository import started — analysis will begin shortly");
       onImported();
       onClose();
       setUrl("");
+      setPat("");
+      setShowPat(false);
     },
-    onError: (err: Error) => toast.error(err.message),
+    onError: (err: Error & { data?: { requires_auth?: boolean; message?: string } }) => {
+      const data = err.data;
+      if (data?.requires_auth) {
+        // Show PAT input for private repo auth
+        setShowPat(true);
+        toast.error("Private repository detected — enter a Personal Access Token below");
+      } else {
+        toast.error(err.message);
+      }
+    },
   });
 
   const handleImportUrl = () => {
     if (!url.trim()) return;
-    importMutation.mutate({ url: url.trim() });
+    importMutation.mutate({ url: url.trim(), pat: pat.trim() || undefined });
   };
 
   const handleImportRepo = (r: GitHubRepo) => {
@@ -84,7 +99,7 @@ function ImportDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-2xl max-h-[80vh] flex flex-col">
+      <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <GitFork className="h-5 w-5" /> Import Repository
@@ -97,19 +112,63 @@ function ImportDialog({
             <TabsTrigger value="browse" className="flex-1">Browse GitHub</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="url" className="mt-4 space-y-3">
+          {/* ─── URL tab ─────────────────────────────────────────────────────── */}
+          <TabsContent value="url" className="mt-4 space-y-4">
+            {/* Public repo notice */}
+            <div className="flex items-start gap-2.5 rounded-lg bg-primary/5 border border-primary/20 px-3 py-2.5">
+              <Globe className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" />
+              <div className="text-xs text-muted-foreground leading-relaxed">
+                <span className="font-medium text-foreground">Public repositories</span> import directly — no login required.{" "}
+                <span className="font-medium text-foreground">Private repositories</span> require a GitHub connection or Personal Access Token.
+              </div>
+            </div>
+
             <div className="space-y-1.5">
               <Label>GitHub Repository URL</Label>
               <Input
                 placeholder="https://github.com/owner/repo"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleImportUrl()}
+                onKeyDown={(e) => e.key === "Enter" && !showPat && handleImportUrl()}
               />
-              <p className="text-xs text-muted-foreground">
-                Paste any public or private GitHub repository URL. Make sure your GitHub account has access.
-              </p>
             </div>
+
+            {/* PAT field — shown when private repo is detected */}
+            {showPat && (
+              <div className="space-y-1.5 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3">
+                <div className="flex items-center gap-1.5 mb-1">
+                  <KeyRound className="h-3.5 w-3.5 text-amber-500" />
+                  <Label className="text-amber-600 dark:text-amber-400 text-xs">Personal Access Token (for private repo)</Label>
+                </div>
+                <Input
+                  type="password"
+                  placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
+                  value={pat}
+                  onChange={(e) => setPat(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleImportUrl()}
+                />
+                <p className="text-[11px] text-muted-foreground">
+                  Create a token at{" "}
+                  <a
+                    href="https://github.com/settings/tokens/new?scopes=repo"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline text-primary inline-flex items-center gap-0.5"
+                  >
+                    github.com/settings/tokens <ExternalLink className="h-2.5 w-2.5" />
+                  </a>{" "}
+                  with the <code className="font-mono bg-muted px-1 rounded">repo</code> scope.
+                  Or connect GitHub in{" "}
+                  <button
+                    className="underline text-primary"
+                    onClick={() => { onClose(); }}
+                  >
+                    Settings → GitHub
+                  </button>.
+                </p>
+              </div>
+            )}
+
             <Button
               onClick={handleImportUrl}
               disabled={!url.trim() || importMutation.isPending}
@@ -123,66 +182,77 @@ function ImportDialog({
             </Button>
           </TabsContent>
 
+          {/* ─── Browse tab ──────────────────────────────────────────────────── */}
           <TabsContent value="browse" className="mt-4 flex flex-col gap-3 min-h-0 flex-1">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                className="pl-9"
-                placeholder="Search repositories…"
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && setSearch(searchInput)}
-              />
-            </div>
+            {!githubConnected ? (
+              <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+                <Github className="h-8 w-8 text-muted-foreground/40" />
+                <p className="text-sm text-muted-foreground">Connect your GitHub account to browse repositories</p>
+                <p className="text-xs text-muted-foreground/60">Go to Settings → GitHub to connect via Personal Access Token</p>
+              </div>
+            ) : (
+              <>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    className="pl-9"
+                    placeholder="Search repositories…"
+                    value={searchInput}
+                    onChange={(e) => setSearchInput(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && setSearch(searchInput)}
+                  />
+                </div>
 
-            <ScrollArea className="flex-1 min-h-0 max-h-80">
-              {(loadingMyRepos || loadingSearch) ? (
-                <div className="flex justify-center py-8">
-                  <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-                </div>
-              ) : displayRepos.length === 0 ? (
-                <div className="py-8 text-center text-muted-foreground text-sm">
-                  {search.length > 1 ? "No results found" : "No repositories found. Connect GitHub in Settings first."}
-                </div>
-              ) : (
-                <div className="space-y-1.5 pr-2">
-                  {displayRepos.map((r) => (
-                    <button
-                      key={r.id}
-                      type="button"
-                      onClick={() => handleImportRepo(r)}
-                      disabled={importMutation.isPending}
-                      className="w-full text-left p-3 rounded-lg border border-border hover:border-primary hover:bg-muted/40 transition-colors group"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-2 min-w-0">
-                          {r.private ? (
-                            <Lock className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-                          ) : (
-                            <Github className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                <ScrollArea className="flex-1 min-h-0 max-h-80">
+                  {(loadingMyRepos || loadingSearch) ? (
+                    <div className="flex justify-center py-8">
+                      <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                    </div>
+                  ) : displayRepos.length === 0 ? (
+                    <div className="py-8 text-center text-muted-foreground text-sm">
+                      {search.length > 1 ? "No results found" : "No repositories found."}
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5 pr-2">
+                      {displayRepos.map((r) => (
+                        <button
+                          key={r.id}
+                          type="button"
+                          onClick={() => handleImportRepo(r)}
+                          disabled={importMutation.isPending}
+                          className="w-full text-left p-3 rounded-lg border border-border hover:border-primary hover:bg-muted/40 transition-colors group"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              {r.private ? (
+                                <Lock className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                              ) : (
+                                <Github className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                              )}
+                              <span className="text-sm font-medium truncate">{r.full_name}</span>
+                              {r.language && (
+                                <Badge variant="outline" className="text-xs flex-shrink-0">{r.language}</Badge>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 flex-shrink-0 text-xs text-muted-foreground">
+                              {r.stargazers_count > 0 && (
+                                <span className="flex items-center gap-1">
+                                  <Star className="h-3 w-3" />{r.stargazers_count}
+                                </span>
+                              )}
+                              <ChevronRight className="h-3.5 w-3.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                            </div>
+                          </div>
+                          {r.description && (
+                            <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{r.description}</p>
                           )}
-                          <span className="text-sm font-medium truncate">{r.full_name}</span>
-                          {r.language && (
-                            <Badge variant="outline" className="text-xs flex-shrink-0">{r.language}</Badge>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2 flex-shrink-0 text-xs text-muted-foreground">
-                          {r.stargazers_count > 0 && (
-                            <span className="flex items-center gap-1">
-                              <Star className="h-3 w-3" />{r.stargazers_count}
-                            </span>
-                          )}
-                          <ChevronRight className="h-3.5 w-3.5 opacity-0 group-hover:opacity-100 transition-opacity" />
-                        </div>
-                      </div>
-                      {r.description && (
-                        <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{r.description}</p>
-                      )}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </ScrollArea>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </ScrollArea>
+              </>
+            )}
           </TabsContent>
         </Tabs>
       </DialogContent>
@@ -296,21 +366,26 @@ function RepoCard({ repo, onDeleted }: { repo: RepositoryImport; onDeleted: () =
             </div>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-medium text-sm">{repo.fullName}</span>
+                <span className="font-medium text-sm">{repo.full_name}</span>
+                {repo.is_private && (
+                  <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
+                    <Lock className="h-2.5 w-2.5" /> Private
+                  </span>
+                )}
                 <StatusBadge status={repo.status} />
               </div>
               <div className="flex flex-wrap gap-3 mt-1 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1">
-                  <GitBranch className="h-3 w-3" />{repo.defaultBranch}
+                  <GitBranch className="h-3 w-3" />{repo.default_branch}
                 </span>
                 <span className="flex items-center gap-1">
                   <Clock className="h-3 w-3" />
-                  {new Date(repo.updatedAt).toLocaleDateString()}
+                  {new Date(repo.updated_at).toLocaleDateString()}
                 </span>
               </div>
-              {repo.errorMessage && (
+              {repo.error_message && (
                 <p className="text-xs text-destructive mt-1 flex items-center gap-1">
-                  <AlertCircle className="h-3 w-3" />{repo.errorMessage}
+                  <AlertCircle className="h-3 w-3" />{repo.error_message}
                 </p>
               )}
             </div>
@@ -383,6 +458,7 @@ export default function Repositories() {
   });
 
   const repos = data?.items ?? [];
+  const githubConnected = !!ghStatus?.connected;
 
   const [, setLocation] = useLocation();
 
@@ -395,39 +471,28 @@ export default function Repositories() {
             Import and analyze GitHub repositories for AI-assisted development.
           </p>
         </div>
-        <Button
-          onClick={() => {
-            if (!ghStatus?.connected) {
-              toast.error("Connect your GitHub account first", {
-                description: "Go to Settings → GitHub to connect your account.",
-                action: { label: "Settings", onClick: () => setLocation("/settings?tab=github") },
-              });
-              return;
-            }
-            setImportOpen(true);
-          }}
-        >
+        <Button onClick={() => setImportOpen(true)}>
           <Plus className="mr-2 h-4 w-4" /> Import Repository
         </Button>
       </div>
 
-      {/* GitHub not connected banner */}
-      {!ghStatus?.connected && (
-        <Card className="mb-5 border-amber-500/40 bg-amber-500/5">
+      {/* GitHub connection status — informational only, not a blocker */}
+      {!githubConnected && (
+        <Card className="mb-5 border-border/60 bg-card/50">
           <CardContent className="pt-4 pb-4">
             <div className="flex items-center gap-3">
-              <AlertCircle className="h-5 w-5 text-amber-500 flex-shrink-0" />
+              <Github className="h-5 w-5 text-muted-foreground flex-shrink-0" />
               <div className="min-w-0">
                 <p className="text-sm font-medium">GitHub not connected</p>
                 <p className="text-xs text-muted-foreground">
-                  Connect your GitHub account in{" "}
+                  Public repos import without login. To import{" "}
+                  <span className="font-medium">private repos</span>, connect GitHub in{" "}
                   <button
                     className="underline text-primary"
                     onClick={() => setLocation("/settings?tab=github")}
                   >
                     Settings → GitHub
-                  </button>{" "}
-                  to import repositories.
+                  </button>.
                 </p>
               </div>
             </div>
@@ -452,7 +517,7 @@ export default function Repositories() {
             <GitFork className="h-10 w-10 mx-auto text-muted-foreground/40 mb-3" />
             <p className="text-sm font-medium text-muted-foreground">No repositories imported yet</p>
             <p className="text-xs text-muted-foreground mt-1 mb-4">
-              Import a GitHub repository to start AI-assisted analysis.
+              Import any public GitHub repository — no login required.
             </p>
             <Button variant="outline" onClick={() => setImportOpen(true)}>
               <Plus className="mr-2 h-4 w-4" /> Import your first repository
@@ -475,6 +540,7 @@ export default function Repositories() {
         open={importOpen}
         onClose={() => setImportOpen(false)}
         onImported={() => qc.invalidateQueries({ queryKey: ["repositories"] })}
+        githubConnected={githubConnected}
       />
     </div>
   );

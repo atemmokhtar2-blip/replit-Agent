@@ -53,17 +53,18 @@ export interface GitHubRepo {
 
 export interface RepositoryImport {
   id: string;
-  userId: string;
   owner: string;
-  repo: string;
-  fullName: string;
-  defaultBranch: string;
-  localPath: string | null;
+  name: string;
+  full_name: string;
+  description: string | null;
+  default_branch: string;
+  clone_url: string;
+  html_url: string;
+  is_private: boolean;
   status: "pending" | "cloning" | "analyzing" | "ready" | "error";
-  errorMessage: string | null;
-  metadata: Record<string, unknown> | null;
-  createdAt: string;
-  updatedAt: string;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface RepoAnalysis {
@@ -134,8 +135,8 @@ export const githubApi = {
 
 export const repositoriesApi = {
   list: () => apiFetch<{ items: RepositoryImport[] }>("/repositories"),
-  importRepo: (payload: { url?: string; owner?: string; repo?: string }) =>
-    apiFetch<RepositoryImport>("/repositories/import", {
+  importRepo: (payload: { url?: string; owner?: string; repo?: string; pat?: string }) =>
+    apiFetch<{ repository: RepositoryImport; message: string }>("/repositories/import", {
       method: "POST",
       body: JSON.stringify(payload),
     }),
