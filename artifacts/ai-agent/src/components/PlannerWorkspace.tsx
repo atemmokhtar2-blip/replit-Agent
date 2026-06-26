@@ -29,7 +29,7 @@ import { streamToExecutionEngine } from "@/lib/execution-stream";
 import type { ExecutionStreamEvent } from "@/lib/execution-stream";
 import { repositoriesApi } from "@/lib/repo-api";
 import { useTaskActions, useTaskStore, DEFAULT_EXEC_PHASES, DEFAULT_VERIFY_CHECKS } from "@/lib/task-store";
-import type { ExecutionTask, VerificationCheck } from "@/lib/task-store";
+import type { ExecutionTask, VerificationCheck, HealthReport } from "@/lib/task-store";
 import type { StageState } from "./design-system/AgentTimeline";
 import { VerificationCard, VerificationProgress } from "./design-system/VerificationCard";
 import { TaskDetailsDrawer } from "./execution/TaskDetailsDrawer";
@@ -367,10 +367,10 @@ type WorkspacePhase =
   | { kind: "streaming";      taskId: string; userMessage: string }
   | { kind: "done_blueprint"; taskId: string; userMessage: string }
   | { kind: "executing";      taskId: string; userMessage: string; currentStageName?: string }
-  | { kind: "verifying";      taskId: string; userMessage: string }
-  | { kind: "verified";       taskId: string; userMessage: string; allPassed: boolean; checks: VerificationCheck[] }
+  | { kind: "verifying";      taskId: string; userMessage: string; currentStageName?: string }
+  | { kind: "verified";       taskId: string; userMessage: string; allPassed: boolean; checks: VerificationCheck[]; healthReport?: HealthReport }
   | { kind: "done_conversation"; content: string; userMessage: string }
-  | { kind: "error";          message: string; userMessage: string };
+  | { kind: "error";          message: string; userMessage: string; retryable?: boolean; taskId?: string; blueprint?: string };
 
 // ── Main PlannerWorkspace ──────────────────────────────────────────────────────
 
@@ -404,11 +404,13 @@ export function PlannerWorkspace({
   const priorMessageCountRef = useRef(messages.length);
 
   const renameMutation = useRenameConversation();
+  const blueprintRef = useRef<string>("");
+
   const { tasks } = useTaskStore();
   const {
     createTask, stageStart, stageComplete, completeTask, failTask,
     startExecution, execPhaseStart, execPhaseComplete, execPhaseFail,
-    setVerifyCheck, setVerifyFixing, setVerified, setExecError,
+    setVerifyCheck, setVerifyFixing, setVerified, setHealthReport, setExecError, retryExecution,
   } = useTaskActions();
 
   const { data: reposData } = useQuery({
@@ -448,7 +450,7 @@ export function PlannerWorkspace({
             if (prev.kind === "executing" || prev.kind === "verifying") {
               return {
                 ...prev,
-                kind: event.stage >= 8 ? "verifying" : "executing",
+                kind: event.stage >= 10 ? "verifying" : "executing",
                 currentStageName: event.stageName,
               } as WorkspacePhase;
             }
@@ -477,6 +479,7 @@ export function PlannerWorkspace({
           setVerifyCheck(taskId, {
             id: event.check ?? "",
             name: event.checkName ?? "",
+            domain: event.checkDomain,
             status: st,
             detail: event.detail,
           });
@@ -496,23 +499,33 @@ export function PlannerWorkspace({
           setVerifyCheck(taskId, {
             id: event.check ?? "",
             name: "",
-            status: event.status === "fixed" ? "fixed" : "fail",
+            status: event.status === "fixed" ? "fixed" : event.status === "fixing" ? "fixing" : "fail",
             detail: event.strategy,
           });
+          break;
+
+        case "health_report":
+          if (event.healthReport) {
+            setHealthReport(taskId, event.healthReport);
+          }
           break;
 
         case "exec_done": {
           const checks: VerificationCheck[] = (event.checks ?? []).map((c) => ({
             id: c.id,
             name: c.name,
+            domain: c.domain,
             status: c.status === "pass" ? "pass" : c.status === "skip" ? "skip" : "fail",
             detail: c.detail,
             duration: c.duration,
           }));
 
+          const healthReport = event.healthReport ?? undefined;
+
           setVerified(taskId, {
             phases: DEFAULT_EXEC_PHASES.map((p) => ({ ...p, status: "complete" })),
             checks,
+            healthReport,
             allPassed: event.allPassed ?? false,
             completedAt: new Date().toISOString(),
           });
@@ -525,6 +538,7 @@ export function PlannerWorkspace({
               userMessage,
               allPassed: event.allPassed ?? false,
               checks,
+              healthReport,
             };
           });
           break;
@@ -536,6 +550,9 @@ export function PlannerWorkspace({
             kind: "error",
             message: event.message ?? "Execution failed",
             userMessage: (prev as { userMessage?: string }).userMessage ?? "",
+            retryable: event.retryable ?? true,
+            taskId,
+            blueprint: blueprintRef.current,
           }));
           break;
       }
@@ -554,7 +571,33 @@ export function PlannerWorkspace({
       }));
     }
   }, [startExecution, execPhaseStart, execPhaseComplete, execPhaseFail,
-      setVerifyCheck, setVerifyFixing, setVerified, setExecError]);
+      setVerifyCheck, setVerifyFixing, setVerified, setHealthReport, setExecError]);
+
+  // ── Retry handler — re-runs execution without restarting conversation ─────────
+
+  const handleRetryExecution = useCallback((taskId: string, blueprint: string) => {
+    retryExecution(taskId);
+    setPhase((prev) => ({
+      kind: "executing",
+      taskId,
+      userMessage: (prev as { userMessage?: string }).userMessage ?? "",
+    }));
+    void runExecution(taskId, blueprint, conversationId);
+  }, [retryExecution, runExecution, conversationId]);
+
+  const handleRetryVerification = useCallback((taskId: string, blueprint: string) => {
+    retryExecution(taskId);
+    setPhase((prev) => ({
+      kind: "verifying",
+      taskId,
+      userMessage: (prev as { userMessage?: string }).userMessage ?? "",
+    }));
+    void runExecution(taskId, blueprint, conversationId);
+  }, [retryExecution, runExecution, conversationId]);
+
+  const handleRetryPreview = useCallback(() => {
+    toast.info("Restarting preview server…");
+  }, []);
 
   // ── Planning pipeline ──────────────────────────────────────────────────────────
 
@@ -604,6 +647,7 @@ export function PlannerWorkspace({
 
         case "done":
           capturedBlueprint = event.content;
+          blueprintRef.current = event.content;
           completeTask(taskId, event.content, event.model);
           setPhase({ kind: "done_blueprint", taskId, userMessage: content });
           setIsStreaming(false);
@@ -771,6 +815,7 @@ export function PlannerWorkspace({
 
       case "verified": {
         const task = tasks.find((t) => t.id === phase.taskId);
+        const blueprint = blueprintRef.current || task?.result?.content || "";
         return (
           <>
             <UserBubble content={phase.userMessage} />
@@ -784,14 +829,18 @@ export function PlannerWorkspace({
             )}
             <div className="flex gap-2.5 items-start">
               <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-muted/50 border border-border mt-0.5">
-                <AIPulse size={15} color="#22c55e" active />
+                <AIPulse size={15} color={phase.allPassed ? "#22c55e" : "#ef4444"} active />
               </div>
               <div className="flex-1 min-w-0">
                 <VerificationCard
                   checks={phase.checks}
                   phases={task?.execPhases}
                   allPassed={phase.allPassed}
+                  healthReport={phase.healthReport ?? task?.healthReport}
                   onPreview={() => toast.info("Preview launching…")}
+                  onRetryBuild={() => handleRetryExecution(phase.taskId, blueprint)}
+                  onRetryVerification={() => handleRetryVerification(phase.taskId, blueprint)}
+                  onRetryPreview={handleRetryPreview}
                 />
               </div>
             </div>
@@ -812,9 +861,36 @@ export function PlannerWorkspace({
           <>
             <UserBubble content={phase.userMessage} />
             <AssistantBubble>
-              <div className="flex items-center gap-2">
-                <div className="h-2 w-2 rounded-full bg-red-500 flex-shrink-0" />
-                <p className="text-sm text-red-400">{phase.message}</p>
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center gap-2">
+                  <div className="h-2 w-2 rounded-full bg-red-500 flex-shrink-0" />
+                  <p className="text-sm text-red-400">{phase.message}</p>
+                </div>
+                {phase.retryable && phase.taskId && (
+                  <div className="flex flex-wrap gap-2 pt-1 border-t border-border/30">
+                    <p className="w-full text-[10px] text-muted-foreground/40">
+                      Retry without restarting the conversation:
+                    </p>
+                    <button
+                      onClick={() => phase.taskId && phase.blueprint !== undefined && handleRetryExecution(phase.taskId, phase.blueprint || blueprintRef.current)}
+                      className="flex items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted/20 transition-colors"
+                    >
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+                        <path d="M1.5 5a3.5 3.5 0 105.5-2.9" /><path d="M6.5 1L7 3.1l-2.1.4" />
+                      </svg>
+                      Retry Build
+                    </button>
+                    <button
+                      onClick={() => phase.taskId && handleRetryVerification(phase.taskId, phase.blueprint || blueprintRef.current)}
+                      className="flex items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted/20 transition-colors"
+                    >
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+                        <path d="M1.5 5a3.5 3.5 0 105.5-2.9" /><path d="M6.5 1L7 3.1l-2.1.4" />
+                      </svg>
+                      Retry Verification
+                    </button>
+                  </div>
+                )}
               </div>
             </AssistantBubble>
           </>

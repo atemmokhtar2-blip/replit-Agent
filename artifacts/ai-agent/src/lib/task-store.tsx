@@ -6,7 +6,10 @@
  * The chat never touches this — only the floating TaskExecutionPanel reads it.
  *
  * Execution lifecycle:
- *   planning → working → building → executing → verifying → verified (or error)
+ *   planning → working → building → executing → verifying → fixing → verified (or error)
+ *
+ * Health report is computed by the backend at the end of every pipeline run
+ * and stored on the task for display in the VerificationCard.
  */
 
 import {
@@ -51,14 +54,42 @@ export type VerifyStatus = "pending" | "checking" | "pass" | "fail" | "skip" | "
 export interface VerificationCheck {
   id: string;
   name: string;
+  domain?: string;
   status: VerifyStatus;
   detail?: string;
   duration?: number;
 }
 
+// ── Health report types ────────────────────────────────────────────────────────
+
+export type HealthDomainStatus = "pass" | "warn" | "fail" | "skip";
+
+export interface DomainScore {
+  domain: string;
+  label: string;
+  score: number;         // 0-100
+  status: HealthDomainStatus;
+  checksTotal: number;
+  checksPassed: number;
+}
+
+export interface HealthReport {
+  overallScore: number;   // 0-100
+  productionReady: boolean;
+  buildStatus: "pass" | "fail" | "warn";
+  domains: DomainScore[];
+  totalChecks: number;
+  passedChecks: number;
+  skippedChecks: number;
+  failedChecks: number;
+  fixesApplied: number;
+  generatedAt: string;
+}
+
 export interface ExecutionResult {
   phases: ExecPhase[];
   checks: VerificationCheck[];
+  healthReport?: HealthReport;
   allPassed: boolean;
   completedAt: string;
 }
@@ -79,6 +110,8 @@ export interface ExecutionTask {
   execPhases?: ExecPhase[];
   verificationChecks?: VerificationCheck[];
   executionResult?: ExecutionResult;
+  healthReport?: HealthReport;
+  retryCount?: number;
   previewUrl?: string;
 }
 
@@ -98,35 +131,52 @@ type TaskAction =
   | { type: "SET_VERIFY_CHECK"; taskId: string; check: VerificationCheck }
   | { type: "SET_VERIFY_FIXING"; taskId: string; checkId: string; strategy: string }
   | { type: "SET_VERIFIED"; taskId: string; result: ExecutionResult }
-  | { type: "SET_EXEC_ERROR"; taskId: string; error: string };
+  | { type: "SET_HEALTH_REPORT"; taskId: string; healthReport: HealthReport }
+  | { type: "SET_EXEC_ERROR"; taskId: string; error: string }
+  | { type: "RETRY_EXECUTION"; taskId: string };
 
 interface TaskStore {
   tasks: ExecutionTask[];
   dispatch: React.Dispatch<TaskAction>;
 }
 
-// ── Default execution phases ───────────────────────────────────────────────────
+// ── Default execution phases (12 stages) ──────────────────────────────────────
 
 export const DEFAULT_EXEC_PHASES: ExecPhase[] = [
-  { id: 1, name: "Analyzing Blueprint",     label: "Scanning",    status: "pending" },
-  { id: 2, name: "Installing Dependencies", label: "Installing",  status: "pending" },
-  { id: 3, name: "Building Project",        label: "Building",    status: "pending" },
-  { id: 4, name: "Running Linter",          label: "Linting",     status: "pending" },
-  { id: 5, name: "Type Checking",           label: "Checking",    status: "pending" },
-  { id: 6, name: "Running Tests",           label: "Testing",     status: "pending" },
-  { id: 7, name: "Starting Application",    label: "Launching",   status: "pending" },
-  { id: 8, name: "Verifying Project",       label: "Verifying",   status: "pending" },
+  { id:  1, name: "Planning",            label: "Planning",   status: "pending" },
+  { id:  2, name: "Generating Files",    label: "Generating", status: "pending" },
+  { id:  3, name: "Installing",          label: "Installing", status: "pending" },
+  { id:  4, name: "Building",            label: "Building",   status: "pending" },
+  { id:  5, name: "Linting",             label: "Linting",    status: "pending" },
+  { id:  6, name: "Type Checking",       label: "Checking",   status: "pending" },
+  { id:  7, name: "Testing",             label: "Testing",    status: "pending" },
+  { id:  8, name: "Starting Server",     label: "Starting",   status: "pending" },
+  { id:  9, name: "Building Production", label: "Bundling",   status: "pending" },
+  { id: 10, name: "Verifying",           label: "Verifying",  status: "pending" },
+  { id: 11, name: "Routing",             label: "Routing",    status: "pending" },
+  { id: 12, name: "APIs",               label: "APIs",       status: "pending" },
 ];
 
+// ── Default verification checks (17 checks) ────────────────────────────────────
+
 export const DEFAULT_VERIFY_CHECKS: VerificationCheck[] = [
-  { id: "build",     name: "Build",           status: "pending" },
-  { id: "typecheck", name: "Typecheck",        status: "pending" },
-  { id: "runtime",   name: "Runtime",          status: "pending" },
-  { id: "api",       name: "API",              status: "pending" },
-  { id: "database",  name: "Database",         status: "pending" },
-  { id: "frontend",  name: "Frontend",         status: "pending" },
-  { id: "tests",     name: "Tests",            status: "pending" },
-  { id: "preview",   name: "Preview Running",  status: "pending" },
+  { id: "build_success",     name: "Build Success",        domain: "build",         status: "pending" },
+  { id: "build_errors",      name: "Build Errors",         domain: "build",         status: "pending" },
+  { id: "missing_deps",      name: "Missing Dependencies", domain: "build",         status: "pending" },
+  { id: "ts_errors",         name: "TypeScript Errors",    domain: "typescript",    status: "pending" },
+  { id: "missing_imports",   name: "Missing Imports",      domain: "typescript",    status: "pending" },
+  { id: "missing_exports",   name: "Missing Exports",      domain: "typescript",    status: "pending" },
+  { id: "circular_imports",  name: "Circular Imports",     domain: "typescript",    status: "pending" },
+  { id: "broken_components", name: "Broken Components",    domain: "frontend",      status: "pending" },
+  { id: "hydration_errors",  name: "Hydration Errors",     domain: "frontend",      status: "pending" },
+  { id: "react_warnings",    name: "React Warnings",       domain: "frontend",      status: "pending" },
+  { id: "console_errors",    name: "Console Errors",       domain: "frontend",      status: "pending" },
+  { id: "api_failures",      name: "API Failures",         domain: "backend",       status: "pending" },
+  { id: "runtime_errors",    name: "Runtime Errors",       domain: "backend",       status: "pending" },
+  { id: "missing_routes",    name: "Missing Routes",       domain: "routing",       status: "pending" },
+  { id: "db_connection",     name: "Database Connection",  domain: "database",      status: "pending" },
+  { id: "env_vars",          name: "Environment Variables",domain: "security",      status: "pending" },
+  { id: "broken_preview",    name: "Preview Running",      domain: "frontend",      status: "pending" },
 ];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -246,6 +296,7 @@ function reducer(state: ExecutionTask[], action: TaskAction): ExecutionTask[] {
               progress: 0,
               execPhases: action.phases,
               verificationChecks: DEFAULT_VERIFY_CHECKS.map((c) => ({ ...c })),
+              healthReport: undefined,
             }
           : t
       );
@@ -261,7 +312,7 @@ function reducer(state: ExecutionTask[], action: TaskAction): ExecutionTask[] {
         return {
           ...t,
           execPhases,
-          status: action.phaseId >= 8 ? "verifying" as const : "executing" as const,
+          status: action.phaseId >= 10 ? "verifying" as const : "executing" as const,
           progress: execProgress(execPhases),
         };
       });
@@ -295,9 +346,11 @@ function reducer(state: ExecutionTask[], action: TaskAction): ExecutionTask[] {
     case "SET_VERIFY_CHECK":
       return state.map((t) => {
         if (t.id !== action.taskId) return t;
-        const verificationChecks = (t.verificationChecks ?? DEFAULT_VERIFY_CHECKS.map((c) => ({ ...c }))).map((c) =>
-          c.id === action.check.id ? { ...action.check } : c
-        );
+        const existing = t.verificationChecks ?? DEFAULT_VERIFY_CHECKS.map((c) => ({ ...c }));
+        const idx = existing.findIndex((c) => c.id === action.check.id);
+        const verificationChecks = idx >= 0
+          ? existing.map((c) => c.id === action.check.id ? { ...c, ...action.check } : c)
+          : [...existing, { ...action.check }];
         const isFixing = verificationChecks.some((c) => c.status === "fixing");
         return {
           ...t,
@@ -325,13 +378,38 @@ function reducer(state: ExecutionTask[], action: TaskAction): ExecutionTask[] {
           completedAt: action.result.completedAt,
           executionResult: action.result,
           verificationChecks: action.result.checks,
+          healthReport: action.result.healthReport,
         };
       });
+
+    case "SET_HEALTH_REPORT":
+      return state.map((t) =>
+        t.id === action.taskId
+          ? { ...t, healthReport: action.healthReport }
+          : t
+      );
 
     case "SET_EXEC_ERROR":
       return state.map((t) =>
         t.id === action.taskId
           ? { ...t, status: "error" as const, error: action.error, completedAt: new Date().toISOString() }
+          : t
+      );
+
+    case "RETRY_EXECUTION":
+      return state.map((t) =>
+        t.id === action.taskId
+          ? {
+              ...t,
+              status: "executing" as const,
+              progress: 0,
+              error: undefined,
+              execPhases: DEFAULT_EXEC_PHASES.map((p) => ({ ...p })),
+              verificationChecks: DEFAULT_VERIFY_CHECKS.map((c) => ({ ...c })),
+              healthReport: undefined,
+              completedAt: undefined,
+              retryCount: (t.retryCount ?? 0) + 1,
+            }
           : t
       );
 
@@ -495,6 +573,13 @@ export function useTaskActions() {
     [dispatch]
   );
 
+  const setHealthReport = useCallback(
+    (taskId: string, healthReport: HealthReport) => {
+      dispatch({ type: "SET_HEALTH_REPORT", taskId, healthReport });
+    },
+    [dispatch]
+  );
+
   const setExecError = useCallback(
     (taskId: string, error: string) => {
       dispatch({ type: "SET_EXEC_ERROR", taskId, error });
@@ -502,9 +587,16 @@ export function useTaskActions() {
     [dispatch]
   );
 
+  const retryExecution = useCallback(
+    (taskId: string) => {
+      dispatch({ type: "RETRY_EXECUTION", taskId });
+    },
+    [dispatch]
+  );
+
   return {
     createTask, stageStart, stageComplete, completeTask, failTask, cancelTask, dismissTask,
     startExecution, execPhaseStart, execPhaseComplete, execPhaseFail,
-    setVerifyCheck, setVerifyFixing, setVerified, setExecError,
+    setVerifyCheck, setVerifyFixing, setVerified, setHealthReport, setExecError, retryExecution,
   };
 }
