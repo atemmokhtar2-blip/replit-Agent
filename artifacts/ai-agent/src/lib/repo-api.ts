@@ -96,13 +96,17 @@ export interface RepoSecret {
 
 export interface WorkspaceSession {
   id: string;
-  repositoryId: string;
-  userId: string;
-  branch: string;
-  localPath: string;
+  name: string;
+  repository_import_id: string;
+  base_branch: string;
+  current_branch: string;
   status: "active" | "idle" | "error" | "closed";
-  createdAt: string;
-  updatedAt: string;
+  last_commit_hash: string | null;
+  pr_url: string | null;
+  pr_number: number | null;
+  local_path: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // ─── GitHub ───────────────────────────────────────────────────────────────────
@@ -171,11 +175,80 @@ export const secretsApi = {
 
 // ─── Workspaces ───────────────────────────────────────────────────────────────
 
+export interface DiffFile {
+  file: string;
+  additions: number;
+  deletions: number;
+  hunks: Array<{ header: string; lines: string[] }>;
+}
+
+export interface GitCommit {
+  hash: string;
+  message: string;
+  author: string;
+  date: string;
+}
+
+export interface ValidationResult {
+  check: string;
+  ok: boolean;
+  output?: string;
+  error?: string;
+}
+
 export const workspacesApi = {
-  list: () => apiFetch<{ items: WorkspaceSession[] }>("/workspaces"),
-  create: (payload: { repositoryId: string; branch?: string }) =>
-    apiFetch<WorkspaceSession>("/workspaces", { method: "POST", body: JSON.stringify(payload) }),
-  get: (id: string) => apiFetch<WorkspaceSession>(`/workspaces/${id}`),
+  list: (repositoryImportId?: string) => {
+    const qs = repositoryImportId ? `?repository_import_id=${repositoryImportId}` : "";
+    return apiFetch<{ items: WorkspaceSession[] }>(`/workspaces${qs}`);
+  },
+  create: (payload: {
+    repository_import_id: string;
+    name?: string;
+    branch_name?: string;
+    base_branch?: string;
+  }) =>
+    apiFetch<{ workspace: WorkspaceSession }>("/workspaces", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  get: (id: string) => apiFetch<{ workspace: WorkspaceSession }>(`/workspaces/${id}`),
   remove: (id: string) =>
     apiFetch<{ message: string }>(`/workspaces/${id}`, { method: "DELETE" }),
+
+  // ── Git operations ──────────────────────────────────────────────────────
+  diff: (id: string) =>
+    apiFetch<{ diff: DiffFile[]; summary: { files: number; additions: number; deletions: number } }>(
+      `/workspaces/${id}/diff`
+    ),
+  log: (id: string) =>
+    apiFetch<{ log: GitCommit[] }>(`/workspaces/${id}/log`),
+  branch: (id: string, payload: { branch_name: string; from_branch?: string }) =>
+    apiFetch<{ message: string; branch: string }>(`/workspaces/${id}/branch`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  commit: (id: string, payload: { message: string }) =>
+    apiFetch<{ message: string; hash: string }>(`/workspaces/${id}/commit`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  push: (id: string) =>
+    apiFetch<{ message: string }>(`/workspaces/${id}/push`, { method: "POST" }),
+  pr: (id: string, payload: { title: string; body?: string; draft?: boolean }) =>
+    apiFetch<{ message: string; url: string; number: number }>(`/workspaces/${id}/pr`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  undo: (id: string) =>
+    apiFetch<{ message: string }>(`/workspaces/${id}/undo`, { method: "POST" }),
+  rollback: (id: string, payload: { commit_hash: string }) =>
+    apiFetch<{ message: string }>(`/workspaces/${id}/rollback`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+  validate: (id: string, payload?: { skip_checks?: string[] }) =>
+    apiFetch<{ results: ValidationResult[]; passed: boolean }>(`/workspaces/${id}/validate`, {
+      method: "POST",
+      body: JSON.stringify(payload ?? {}),
+    }),
 };
