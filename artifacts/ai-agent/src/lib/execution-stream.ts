@@ -50,6 +50,19 @@ export interface HealthReport {
   generatedAt: string;
 }
 
+export interface ProductionGate {
+  buildSuccessful:            boolean;
+  runtimeHealthy:             boolean;
+  previewResponding:          boolean;
+  routesVerified:             boolean;
+  apiVerified:                boolean;
+  databaseHealthy:            boolean;
+  assetsLoaded:               boolean;
+  noCriticalErrors:           boolean;
+  productionValidationPassed: boolean;
+  allGatesPassed:             boolean;
+}
+
 export type ExecutionStreamEvent =
   | { type: "exec_stage_start";    stage: number; stageName: string; stageLabel: string }
   | { type: "exec_stage_complete"; stage: number; duration: number }
@@ -58,7 +71,8 @@ export type ExecutionStreamEvent =
   | { type: "fix_attempt";         check: string; checkName?: string; checkDomain?: string; strategy: string; iteration?: number }
   | { type: "fix_result";          check: string; status: "fixed" | "unfixable" | "fixing"; strategy: string; iteration?: number }
   | { type: "health_report";       healthReport: HealthReport }
-  | { type: "exec_done";           checks: VerificationCheckResult[]; healthReport?: HealthReport; allPassed: boolean }
+  | { type: "production_gate";     productionGate: ProductionGate }
+  | { type: "exec_done";           checks: VerificationCheckResult[]; healthReport?: HealthReport; allPassed: boolean; previewUrl?: string; productionGate?: ProductionGate }
   | { type: "exec_error";          message: string; retryable?: boolean };
 
 export const EXEC_STAGE_LABELS: Record<number, { name: string; label: string }> = {
@@ -74,6 +88,11 @@ export const EXEC_STAGE_LABELS: Record<number, { name: string; label: string }> 
   10: { name: "Verifying",           label: "Verifying"  },
   11: { name: "Routing",             label: "Routing"    },
   12: { name: "APIs",               label: "APIs"       },
+  13: { name: "Health Check",        label: "Health"     },
+  14: { name: "Endpoint Verify",     label: "Endpoints"  },
+  15: { name: "Auto Debug",          label: "Debugging"  },
+  16: { name: "Auto Fix & Rebuild",  label: "Repairing"  },
+  17: { name: "Final Verification",  label: "Finalizing" },
 };
 
 export const DOMAIN_META: Record<string, { label: string; icon: string; color: string }> = {

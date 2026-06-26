@@ -29,7 +29,7 @@ import { streamToExecutionEngine } from "@/lib/execution-stream";
 import type { ExecutionStreamEvent } from "@/lib/execution-stream";
 import { repositoriesApi } from "@/lib/repo-api";
 import { useTaskActions, useTaskStore, DEFAULT_EXEC_PHASES, DEFAULT_VERIFY_CHECKS } from "@/lib/task-store";
-import type { ExecutionTask, VerificationCheck, HealthReport } from "@/lib/task-store";
+import type { ExecutionTask, VerificationCheck, HealthReport, ProductionGate } from "@/lib/task-store";
 import type { StageState } from "./design-system/AgentTimeline";
 import { VerificationCard, VerificationProgress } from "./design-system/VerificationCard";
 import { TaskDetailsDrawer } from "./execution/TaskDetailsDrawer";
@@ -368,7 +368,7 @@ type WorkspacePhase =
   | { kind: "done_blueprint"; taskId: string; userMessage: string }
   | { kind: "executing";      taskId: string; userMessage: string; currentStageName?: string }
   | { kind: "verifying";      taskId: string; userMessage: string; currentStageName?: string }
-  | { kind: "verified";       taskId: string; userMessage: string; allPassed: boolean; checks: VerificationCheck[]; healthReport?: HealthReport }
+  | { kind: "verified";       taskId: string; userMessage: string; allPassed: boolean; checks: VerificationCheck[]; healthReport?: HealthReport; previewUrl?: string; productionGate?: ProductionGate }
   | { kind: "done_conversation"; content: string; userMessage: string }
   | { kind: "error";          message: string; userMessage: string; retryable?: boolean; taskId?: string; blueprint?: string };
 
@@ -510,6 +510,11 @@ export function PlannerWorkspace({
           }
           break;
 
+        case "production_gate":
+          // store gate result on task via setVerifyCheck side-effect — gate is
+          // persisted when exec_done fires; no action needed here
+          break;
+
         case "exec_done": {
           const checks: VerificationCheck[] = (event.checks ?? []).map((c) => ({
             id: c.id,
@@ -521,14 +526,21 @@ export function PlannerWorkspace({
           }));
 
           const healthReport = event.healthReport ?? undefined;
+          const previewUrl = event.previewUrl;
+          const productionGate = event.productionGate;
 
-          setVerified(taskId, {
-            phases: DEFAULT_EXEC_PHASES.map((p) => ({ ...p, status: "complete" })),
-            checks,
-            healthReport,
-            allPassed: event.allPassed ?? false,
-            completedAt: new Date().toISOString(),
-          });
+          setVerified(
+            taskId,
+            {
+              phases: DEFAULT_EXEC_PHASES.map((p) => ({ ...p, status: "complete" })),
+              checks,
+              healthReport,
+              allPassed: event.allPassed ?? false,
+              completedAt: new Date().toISOString(),
+            },
+            previewUrl,
+            productionGate,
+          );
 
           setPhase((prev) => {
             const userMessage = (prev as { userMessage?: string }).userMessage ?? "";
@@ -539,6 +551,8 @@ export function PlannerWorkspace({
               allPassed: event.allPassed ?? false,
               checks,
               healthReport,
+              previewUrl,
+              productionGate,
             };
           });
           break;
@@ -816,6 +830,7 @@ export function PlannerWorkspace({
       case "verified": {
         const task = tasks.find((t) => t.id === phase.taskId);
         const blueprint = blueprintRef.current || task?.result?.content || "";
+        const effectivePreviewUrl = phase.previewUrl ?? task?.previewUrl;
         return (
           <>
             <UserBubble content={phase.userMessage} />
@@ -837,7 +852,9 @@ export function PlannerWorkspace({
                   phases={task?.execPhases}
                   allPassed={phase.allPassed}
                   healthReport={phase.healthReport ?? task?.healthReport}
-                  onPreview={() => toast.info("Preview launching…")}
+                  onPreview={effectivePreviewUrl
+                    ? () => window.open(effectivePreviewUrl, "_blank", "noopener,noreferrer")
+                    : () => toast.info("Preview URL not available yet")}
                   onRetryBuild={() => handleRetryExecution(phase.taskId, blueprint)}
                   onRetryVerification={() => handleRetryVerification(phase.taskId, blueprint)}
                   onRetryPreview={handleRetryPreview}

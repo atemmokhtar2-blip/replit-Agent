@@ -673,7 +673,7 @@ router.post("/execute/stream", validateBody(executeSchema), async (req, res) => 
   } catch (err) {
     if (aborted) return;
     const msg = err instanceof Error ? err.message : "Execution pipeline error";
-    logger.error({ err }, "[execute/stream] Pipeline error");
+    console.error("[execute/stream] Pipeline error", err);
     send({ type: "exec_error", message: msg });
     if (!res.writableEnded) res.end();
   }

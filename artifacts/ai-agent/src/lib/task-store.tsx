@@ -94,6 +94,19 @@ export interface ExecutionResult {
   completedAt: string;
 }
 
+export interface ProductionGate {
+  buildSuccessful:            boolean;
+  runtimeHealthy:             boolean;
+  previewResponding:          boolean;
+  routesVerified:             boolean;
+  apiVerified:                boolean;
+  databaseHealthy:            boolean;
+  assetsLoaded:               boolean;
+  noCriticalErrors:           boolean;
+  productionValidationPassed: boolean;
+  allGatesPassed:             boolean;
+}
+
 export interface ExecutionTask {
   id: string;
   conversationId: string;
@@ -113,6 +126,7 @@ export interface ExecutionTask {
   healthReport?: HealthReport;
   retryCount?: number;
   previewUrl?: string;
+  productionGate?: ProductionGate;
 }
 
 type TaskAction =
@@ -130,7 +144,7 @@ type TaskAction =
   | { type: "EXEC_PHASE_FAIL"; taskId: string; phaseId: number; error: string }
   | { type: "SET_VERIFY_CHECK"; taskId: string; check: VerificationCheck }
   | { type: "SET_VERIFY_FIXING"; taskId: string; checkId: string; strategy: string }
-  | { type: "SET_VERIFIED"; taskId: string; result: ExecutionResult }
+  | { type: "SET_VERIFIED"; taskId: string; result: ExecutionResult; previewUrl?: string; productionGate?: ProductionGate }
   | { type: "SET_HEALTH_REPORT"; taskId: string; healthReport: HealthReport }
   | { type: "SET_EXEC_ERROR"; taskId: string; error: string }
   | { type: "RETRY_EXECUTION"; taskId: string };
@@ -140,7 +154,7 @@ interface TaskStore {
   dispatch: React.Dispatch<TaskAction>;
 }
 
-// ── Default execution phases (12 stages) ──────────────────────────────────────
+// ── Default execution phases (17 stages) ──────────────────────────────────────
 
 export const DEFAULT_EXEC_PHASES: ExecPhase[] = [
   { id:  1, name: "Planning",            label: "Planning",   status: "pending" },
@@ -155,9 +169,14 @@ export const DEFAULT_EXEC_PHASES: ExecPhase[] = [
   { id: 10, name: "Verifying",           label: "Verifying",  status: "pending" },
   { id: 11, name: "Routing",             label: "Routing",    status: "pending" },
   { id: 12, name: "APIs",               label: "APIs",       status: "pending" },
+  { id: 13, name: "Health Check",        label: "Health",     status: "pending" },
+  { id: 14, name: "Endpoint Verify",     label: "Endpoints",  status: "pending" },
+  { id: 15, name: "Auto Debug",          label: "Debugging",  status: "pending" },
+  { id: 16, name: "Auto Fix & Rebuild",  label: "Repairing",  status: "pending" },
+  { id: 17, name: "Final Verification",  label: "Finalizing", status: "pending" },
 ];
 
-// ── Default verification checks (17 checks) ────────────────────────────────────
+// ── Default verification checks (18 checks, includes assets_loaded) ────────────
 
 export const DEFAULT_VERIFY_CHECKS: VerificationCheck[] = [
   { id: "build_success",     name: "Build Success",        domain: "build",         status: "pending" },
@@ -177,6 +196,7 @@ export const DEFAULT_VERIFY_CHECKS: VerificationCheck[] = [
   { id: "db_connection",     name: "Database Connection",  domain: "database",      status: "pending" },
   { id: "env_vars",          name: "Environment Variables",domain: "security",      status: "pending" },
   { id: "broken_preview",    name: "Preview Running",      domain: "frontend",      status: "pending" },
+  { id: "assets_loaded",     name: "Assets Loaded",        domain: "frontend",      status: "pending" },
 ];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -379,6 +399,8 @@ function reducer(state: ExecutionTask[], action: TaskAction): ExecutionTask[] {
           executionResult: action.result,
           verificationChecks: action.result.checks,
           healthReport: action.result.healthReport,
+          previewUrl: action.previewUrl ?? t.previewUrl,
+          productionGate: action.productionGate ?? t.productionGate,
         };
       });
 
@@ -567,8 +589,8 @@ export function useTaskActions() {
   );
 
   const setVerified = useCallback(
-    (taskId: string, result: ExecutionResult) => {
-      dispatch({ type: "SET_VERIFIED", taskId, result });
+    (taskId: string, result: ExecutionResult, previewUrl?: string, productionGate?: ProductionGate) => {
+      dispatch({ type: "SET_VERIFIED", taskId, result, previewUrl, productionGate });
     },
     [dispatch]
   );
@@ -598,5 +620,5 @@ export function useTaskActions() {
     createTask, stageStart, stageComplete, completeTask, failTask, cancelTask, dismissTask,
     startExecution, execPhaseStart, execPhaseComplete, execPhaseFail,
     setVerifyCheck, setVerifyFixing, setVerified, setHealthReport, setExecError, retryExecution,
-  };
+  } as const;
 }
