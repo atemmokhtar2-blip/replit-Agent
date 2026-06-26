@@ -18,6 +18,8 @@ import ResetPassword from "@/pages/ResetPassword";
 import Dashboard from "@/pages/Dashboard";
 import Projects from "@/pages/Projects";
 import ProjectWorkspace from "@/pages/ProjectWorkspace";
+import Repositories from "@/pages/Repositories";
+import SecretsCenter from "@/pages/SecretsCenter";
 import Settings from "@/pages/Settings";
 import Notifications from "@/pages/Notifications";
 import Admin from "@/pages/Admin";
@@ -100,6 +102,22 @@ const ControlCenterPage = () => (
   </ProtectedRoute>
 );
 
+const RepositoriesPage = () => (
+  <ProtectedRoute>
+    <AppLayout>
+      <Repositories />
+    </AppLayout>
+  </ProtectedRoute>
+);
+
+const SecretsCenterPage = () => (
+  <ProtectedRoute>
+    <AppLayout>
+      <SecretsCenter />
+    </AppLayout>
+  </ProtectedRoute>
+);
+
 function Router() {
   return (
     <Switch>
@@ -116,6 +134,8 @@ function Router() {
       <Route path="/notifications" component={NotificationsPage} />
       <Route path="/admin" component={AdminPage} />
       <Route path="/control-center" component={ControlCenterPage} />
+      <Route path="/repositories" component={RepositoriesPage} />
+      <Route path="/secrets" component={SecretsCenterPage} />
       <Route component={NotFound} />
     </Switch>
   );

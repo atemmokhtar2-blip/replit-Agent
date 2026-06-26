@@ -1,4 +1,6 @@
 import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { githubApi, type GitHubRepo } from "@/lib/repo-api";
 import { useAuth } from "@/components/AuthProvider";
 import { useTheme } from "@/components/ThemeProvider";
 import {
@@ -35,6 +37,13 @@ import {
   CheckCircle2,
   XCircle,
   Plus,
+  Github,
+  Link2,
+  Link2Off,
+  RefreshCw,
+  Star,
+  Lock,
+  GitBranch,
 } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -56,6 +65,239 @@ const addProviderSchema = z.object({
   base_url: z.string().optional(),
   default_model: z.string().optional(),
 });
+
+// ── GitHub Tab ─────────────────────────────────────────────────────────────────
+
+const patSchema = z.object({ token: z.string().min(10, "Enter your GitHub PAT") });
+
+function GitHubTab() {
+  const qc = useQueryClient();
+  const [showConnect, setShowConnect] = useState(false);
+  const [showRepos, setShowRepos] = useState(false);
+
+  const { data: status, isLoading: loadingStatus } = useQuery({
+    queryKey: ["github-status"],
+    queryFn: githubApi.status,
+  });
+
+  const { data: reposData, isLoading: loadingRepos } = useQuery({
+    queryKey: ["github-repos"],
+    queryFn: () => githubApi.repos({ per_page: 30 }),
+    enabled: showRepos && !!status?.connected,
+  });
+
+  const patForm = useForm<z.infer<typeof patSchema>>({
+    resolver: zodResolver(patSchema),
+    defaultValues: { token: "" },
+  });
+
+  const connectMutation = useMutation({
+    mutationFn: (token: string) => githubApi.connect(token),
+    onSuccess: (data) => {
+      toast.success(`Connected as @${data.login}`);
+      qc.invalidateQueries({ queryKey: ["github-status"] });
+      setShowConnect(false);
+      patForm.reset();
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  const disconnectMutation = useMutation({
+    mutationFn: githubApi.disconnect,
+    onSuccess: () => {
+      toast.success("GitHub disconnected");
+      qc.invalidateQueries({ queryKey: ["github-status"] });
+      qc.invalidateQueries({ queryKey: ["github-repos"] });
+      setShowRepos(false);
+    },
+    onError: (err: Error) => toast.error(err.message),
+  });
+
+  if (loadingStatus) {
+    return (
+      <div className="flex items-center gap-2 text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin" /> Checking connection…
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* Connection status card */}
+      <Card className={status?.connected ? "border-green-500/40" : ""}>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Github className="h-4 w-4" /> GitHub Connection
+          </CardTitle>
+          <CardDescription>
+            Connect your GitHub account to import repositories and run git operations.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {status?.connected ? (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/30">
+                <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-sm font-medium">Connected as <span className="text-green-600 dark:text-green-400">@{status.login}</span></p>
+                  {status.name && <p className="text-xs text-muted-foreground">{status.name}</p>}
+                  {status.connectedAt && (
+                    <p className="text-xs text-muted-foreground">
+                      Since {new Date(status.connectedAt).toLocaleDateString()}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {status.scopes && status.scopes.length > 0 && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1.5">Token scopes</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {status.scopes.map((s) => (
+                      <Badge key={s} variant="secondary" className="font-mono text-xs">{s}</Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+              <XCircle className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+              <p className="text-sm text-muted-foreground">Not connected. Add a Personal Access Token to get started.</p>
+            </div>
+          )}
+        </CardContent>
+        <CardFooter className="flex flex-wrap gap-2">
+          {status?.connected ? (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => setShowRepos((p) => !p)}
+                disabled={loadingRepos}
+              >
+                {loadingRepos ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                )}
+                {showRepos ? "Hide Repos" : "Browse Repos"}
+              </Button>
+              <Button
+                variant="ghost"
+                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                onClick={() => disconnectMutation.mutate()}
+                disabled={disconnectMutation.isPending}
+              >
+                {disconnectMutation.isPending ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Link2Off className="mr-2 h-4 w-4" />
+                )}
+                Disconnect
+              </Button>
+            </>
+          ) : (
+            <Button onClick={() => setShowConnect(true)}>
+              <Link2 className="mr-2 h-4 w-4" /> Connect with PAT
+            </Button>
+          )}
+        </CardFooter>
+      </Card>
+
+      {/* Connect PAT form */}
+      {showConnect && !status?.connected && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Personal Access Token</CardTitle>
+            <CardDescription>
+              Create a token at{" "}
+              <a
+                href="https://github.com/settings/tokens"
+                target="_blank"
+                rel="noreferrer"
+                className="text-primary underline"
+              >
+                github.com/settings/tokens
+              </a>{" "}
+              with the <code className="bg-muted px-1 rounded">repo</code> scope.
+            </CardDescription>
+          </CardHeader>
+          <form onSubmit={patForm.handleSubmit((d) => connectMutation.mutate(d.token))}>
+            <CardContent className="space-y-3">
+              <div className="space-y-1.5">
+                <Label>GitHub PAT</Label>
+                <Input
+                  {...patForm.register("token")}
+                  type="password"
+                  placeholder="ghp_..."
+                  className="font-mono"
+                />
+                {patForm.formState.errors.token && (
+                  <p className="text-xs text-destructive">{patForm.formState.errors.token.message}</p>
+                )}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Your token is encrypted with AES-256 before being stored.
+              </p>
+            </CardContent>
+            <CardFooter className="flex gap-2">
+              <Button type="submit" disabled={connectMutation.isPending}>
+                {connectMutation.isPending ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Connecting…</>
+                ) : (
+                  <><Github className="mr-2 h-4 w-4" />Connect</>
+                )}
+              </Button>
+              <Button type="button" variant="ghost" onClick={() => { setShowConnect(false); patForm.reset(); }}>
+                Cancel
+              </Button>
+            </CardFooter>
+          </form>
+        </Card>
+      )}
+
+      {/* Repository preview */}
+      {showRepos && status?.connected && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Your Repositories</CardTitle>
+            <CardDescription>Recent repositories from your GitHub account.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {loadingRepos ? (
+              <div className="flex justify-center py-4">
+                <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              </div>
+            ) : (reposData?.items ?? []).length === 0 ? (
+              <p className="text-sm text-muted-foreground">No repositories found.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {(reposData?.items ?? []).slice(0, 15).map((r: GitHubRepo) => (
+                  <div key={r.id} className="flex items-center gap-2 px-3 py-2 rounded-md border border-border">
+                    {r.private ? (
+                      <Lock className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                    ) : (
+                      <Github className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+                    )}
+                    <span className="text-sm font-medium truncate flex-1">{r.full_name}</span>
+                    {r.language && (
+                      <Badge variant="outline" className="text-xs flex-shrink-0">{r.language}</Badge>
+                    )}
+                    {r.stargazers_count > 0 && (
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground flex-shrink-0">
+                        <Star className="h-3 w-3" />{r.stargazers_count}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
 
 // ── AI Providers Tab ───────────────────────────────────────────────────────────
 
@@ -468,6 +710,9 @@ export default function Settings() {
             <TabsTrigger value="ai-providers" className="flex-shrink-0">
               AI Providers
             </TabsTrigger>
+            <TabsTrigger value="github" className="flex-shrink-0">
+              GitHub
+            </TabsTrigger>
             <TabsTrigger value="profile" className="flex-shrink-0">
               Profile
             </TabsTrigger>
@@ -484,6 +729,10 @@ export default function Settings() {
 
           <TabsContent value="ai-providers">
             <AIProvidersTab />
+          </TabsContent>
+
+          <TabsContent value="github">
+            <GitHubTab />
           </TabsContent>
 
           <TabsContent value="profile">
