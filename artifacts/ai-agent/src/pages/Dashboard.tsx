@@ -5,9 +5,11 @@ import {
   useListConversations,
 } from "@workspace/api-client-react";
 import type { AIConversation } from "@workspace/api-client-react";
+import { useQuery } from "@tanstack/react-query";
+import { repositoriesApi, workspacesApi } from "@/lib/repo-api";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Activity, Code2, Globe, Layout, ArrowRight, MessageSquare, Cpu, Clock } from "lucide-react";
+import { Activity, Code2, Globe, Layout, ArrowRight, MessageSquare, Cpu, Clock, GitFork, Layers, CheckCircle2 } from "lucide-react";
 import { Link } from "wouter";
 import { AIPulse } from "@/components/design-system/AIPulse";
 
@@ -132,6 +134,15 @@ export default function Dashboard() {
   const { data: recent, isLoading: recentLoading } = useGetRecentProjects({ limit: 5 });
   const { data: convList, isLoading: convLoading } = useListConversations({ per_page: 20 });
 
+  const { data: reposData, isLoading: reposLoading } = useQuery({
+    queryKey: ["repositories"],
+    queryFn: repositoriesApi.list,
+  });
+  const { data: workspacesData, isLoading: workspacesLoading } = useQuery({
+    queryKey: ["workspaces"],
+    queryFn: () => workspacesApi.list(),
+  });
+
   const conversations = convList?.items ?? [];
   const totalConvs = convList?.total ?? 0;
 
@@ -143,6 +154,12 @@ export default function Dashboard() {
   const thisWeek = conversations.filter(
     (c) => new Date(c.updated_at).getTime() > weekAgo
   ).length;
+
+  // Repository Agent stats
+  const allRepos = reposData?.items ?? [];
+  const readyRepos = allRepos.filter((r) => r.status === "ready").length;
+  const allWorkspaces = workspacesData?.items ?? [];
+  const activeWorkspaces = allWorkspaces.filter((w) => w.status === "active").length;
 
   return (
     <div className="page-content">
@@ -291,6 +308,107 @@ export default function Dashboard() {
           ) : null}
         </div>
       ) : null}
+
+      {/* ── Repository Agent ──────────────────────────────────────────────── */}
+      <div className="mt-4 sm:mt-6">
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="text-sm sm:text-base flex items-center gap-2">
+                  <GitFork className="h-4 w-4 text-primary" />
+                  Repository Agent
+                </CardTitle>
+                <CardDescription className="mt-0.5">
+                  Import, analyze, and manage code repositories
+                </CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+              <div className="rounded-lg border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">Repositories</p>
+                {reposLoading ? (
+                  <Skeleton className="h-6 w-8 mt-1" />
+                ) : (
+                  <p className="text-xl font-bold mt-0.5">{allRepos.length}</p>
+                )}
+              </div>
+              <div className="rounded-lg border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">Ready</p>
+                {reposLoading ? (
+                  <Skeleton className="h-6 w-8 mt-1" />
+                ) : (
+                  <p className="text-xl font-bold mt-0.5 text-green-600">{readyRepos}</p>
+                )}
+              </div>
+              <div className="rounded-lg border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">Workspaces</p>
+                {workspacesLoading ? (
+                  <Skeleton className="h-6 w-8 mt-1" />
+                ) : (
+                  <p className="text-xl font-bold mt-0.5">{allWorkspaces.length}</p>
+                )}
+              </div>
+              <div className="rounded-lg border bg-muted/30 p-3">
+                <p className="text-xs text-muted-foreground">Active</p>
+                {workspacesLoading ? (
+                  <Skeleton className="h-6 w-8 mt-1" />
+                ) : (
+                  <p className="text-xl font-bold mt-0.5 text-primary">{activeWorkspaces}</p>
+                )}
+              </div>
+            </div>
+
+            {allRepos.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-border/50 py-6 text-center">
+                <GitFork className="h-8 w-8 mx-auto text-muted-foreground/40 mb-2" />
+                <p className="text-sm text-muted-foreground">No repositories imported yet</p>
+                <p className="text-xs text-muted-foreground/60 mt-1">
+                  Import a GitHub repo to get started with the Repository Agent
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {allRepos.slice(0, 3).map((repo) => (
+                  <Link key={repo.id} href="/repositories">
+                    <div className="flex items-center justify-between p-3 rounded-lg border bg-card hover:bg-muted/50 cursor-pointer transition-colors gap-3 group">
+                      <div className="flex items-center gap-3 min-w-0">
+                        <GitFork className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+                        <div className="min-w-0">
+                          <p className="font-medium text-sm truncate">{repo.fullName}</p>
+                          <p className="text-[11px] text-muted-foreground capitalize">{repo.status}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        {repo.status === "ready" && (
+                          <CheckCircle2 className="h-4 w-4 text-green-600" />
+                        )}
+                        <ArrowRight className="h-4 w-4 text-muted-foreground/40 group-hover:text-muted-foreground transition-colors" />
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+
+            <div className="flex gap-2 mt-4">
+              <Link href="/repositories">
+                <span className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline cursor-pointer">
+                  <GitFork className="h-3.5 w-3.5" /> Manage Repositories
+                </span>
+              </Link>
+              <span className="text-muted-foreground/40 text-xs">·</span>
+              <Link href="/workspaces">
+                <span className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline cursor-pointer">
+                  <Layers className="h-3.5 w-3.5" /> Open Workspaces
+                </span>
+              </Link>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }

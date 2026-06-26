@@ -429,7 +429,7 @@ function WorkspaceDetail({ ws }: { ws: WorkspaceSession }) {
               )}
             </div>
             <div className="text-xs text-muted-foreground">
-              Current branch: <code className="bg-muted px-1 rounded">{ws.currentBranch}</code>
+              Current branch: <code className="bg-muted px-1 rounded">{ws.current_branch}</code>
             </div>
             <Button type="submit" size="sm" disabled={branchMutation.isPending}>
               {branchMutation.isPending ? (
@@ -477,7 +477,7 @@ function WorkspaceDetail({ ws }: { ws: WorkspaceSession }) {
               <Textarea {...prForm.register("body")} rows={3} placeholder="Describe your changes…" />
             </div>
             <div className="text-xs text-muted-foreground">
-              Branch: <code className="bg-muted px-1 rounded">{ws.currentBranch}</code> → <code className="bg-muted px-1 rounded">{ws.baseBranch}</code>
+              Branch: <code className="bg-muted px-1 rounded">{ws.current_branch}</code> → <code className="bg-muted px-1 rounded">{ws.base_branch}</code>
             </div>
             <DialogFooter>
               <Button type="button" variant="ghost" onClick={() => setPrOpen(false)}>Cancel</Button>
@@ -625,19 +625,19 @@ function WorkspaceCard({
             </div>
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-medium text-sm">{(ws as any).name ?? ws.id.slice(0, 8)}</span>
+                <span className="font-medium text-sm">{ws.name ?? ws.id.slice(0, 8)}</span>
                 <WsBadge status={ws.status} />
               </div>
               <div className="flex flex-wrap gap-3 mt-1 text-xs text-muted-foreground">
                 <span className="flex items-center gap-1">
                   <GitBranch className="h-3 w-3" />
-                  <code>{ws.currentBranch}</code>
+                  <code>{ws.current_branch}</code>
                 </span>
                 <span className="text-muted-foreground/50">→</span>
-                <span><code>{ws.baseBranch}</code></span>
+                <span><code>{ws.base_branch}</code></span>
                 <span className="flex items-center gap-1">
                   <Clock className="h-3 w-3" />
-                  {new Date(ws.updatedAt).toLocaleDateString()}
+                  {new Date(ws.updated_at).toLocaleDateString()}
                 </span>
               </div>
             </div>

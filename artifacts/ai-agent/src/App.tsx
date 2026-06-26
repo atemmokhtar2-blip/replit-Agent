@@ -25,6 +25,7 @@ import Notifications from "@/pages/Notifications";
 import Admin from "@/pages/Admin";
 import ChatWorkspace from "@/pages/ChatWorkspace";
 import ControlCenter from "@/pages/ControlCenter";
+import Workspaces from "@/pages/Workspaces";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -118,6 +119,14 @@ const SecretsCenterPage = () => (
   </ProtectedRoute>
 );
 
+const WorkspacesPage = () => (
+  <ProtectedRoute>
+    <AppLayout>
+      <Workspaces />
+    </AppLayout>
+  </ProtectedRoute>
+);
+
 function Router() {
   return (
     <Switch>
@@ -136,6 +145,7 @@ function Router() {
       <Route path="/control-center" component={ControlCenterPage} />
       <Route path="/repositories" component={RepositoriesPage} />
       <Route path="/secrets" component={SecretsCenterPage} />
+      <Route path="/workspaces" component={WorkspacesPage} />
       <Route component={NotFound} />
     </Switch>
   );
