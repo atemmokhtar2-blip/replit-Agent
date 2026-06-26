@@ -114,7 +114,7 @@ function AddSecretDialog({
               </SelectTrigger>
               <SelectContent>
                 {repos.map((r) => (
-                  <SelectItem key={r.id} value={r.id}>{r.fullName}</SelectItem>
+                  <SelectItem key={r.id} value={r.id}>{r.full_name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -377,7 +377,7 @@ export default function SecretsCenter() {
           <SelectContent>
             <SelectItem value="all">All repositories</SelectItem>
             {repos.map((r) => (
-              <SelectItem key={r.id} value={r.id}>{r.fullName}</SelectItem>
+              <SelectItem key={r.id} value={r.id}>{r.full_name}</SelectItem>
             ))}
           </SelectContent>
         </Select>

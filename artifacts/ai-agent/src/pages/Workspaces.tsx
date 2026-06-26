@@ -549,7 +549,7 @@ function CreateWorkspaceDialog({
               </SelectTrigger>
               <SelectContent>
                 {repos.filter((r) => r.status === "ready").map((r) => (
-                  <SelectItem key={r.id} value={r.id}>{r.fullName}</SelectItem>
+                  <SelectItem key={r.id} value={r.id}>{r.full_name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -572,7 +572,7 @@ function CreateWorkspaceDialog({
             />
             {selectedRepo && (
               <p className="text-xs text-muted-foreground">
-                Base branch: <code className="bg-muted px-1 rounded">{selectedRepo.defaultBranch}</code>
+                Base branch: <code className="bg-muted px-1 rounded">{selectedRepo.default_branch}</code>
               </p>
             )}
           </div>
