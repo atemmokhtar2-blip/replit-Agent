@@ -26,6 +26,7 @@ import Admin from "@/pages/Admin";
 import ChatWorkspace from "@/pages/ChatWorkspace";
 import ControlCenter from "@/pages/ControlCenter";
 import Workspaces from "@/pages/Workspaces";
+import AIEngine from "@/pages/AIEngine";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -127,6 +128,14 @@ const WorkspacesPage = () => (
   </ProtectedRoute>
 );
 
+const AIEnginePage = () => (
+  <ProtectedRoute>
+    <AppLayout>
+      <AIEngine />
+    </AppLayout>
+  </ProtectedRoute>
+);
+
 function Router() {
   return (
     <Switch>
@@ -146,6 +155,7 @@ function Router() {
       <Route path="/repositories" component={RepositoriesPage} />
       <Route path="/secrets" component={SecretsCenterPage} />
       <Route path="/workspaces" component={WorkspacesPage} />
+      <Route path="/ai-engine" component={AIEnginePage} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -15,6 +15,8 @@ import storageModuleRouter from "./modules/storage";
 import agentsRouter from "./modules/agents";
 import understandingRouter from "./modules/understanding";
 
+import tasksRouter from "./modules/tasks";
+
 import githubRouter from "./modules/github";
 import repositoriesRouter from "./modules/repositories";
 import secretsCenterRouter from "./modules/secrets-center";
@@ -41,6 +43,8 @@ router.use("/v1/memory", memoryRouter);
 router.use("/v1/storage", storageModuleRouter);
 router.use("/v1/agents", agentsRouter);
 router.use("/v1/understanding", understandingRouter);
+
+router.use("/v1/tasks", tasksRouter);
 
 // API v1 — Repository Agent Modules
 router.use("/v1/github", githubRouter);

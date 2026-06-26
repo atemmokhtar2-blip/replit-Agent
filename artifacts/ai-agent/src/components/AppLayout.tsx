@@ -20,6 +20,7 @@ import {
   GitFork,
   KeyRound,
   Layers,
+  BrainCircuit,
 } from "lucide-react";
 
 // ── Breakpoint constant (matches Tailwind's lg: 1024px) ──────────────────────
@@ -79,6 +80,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     { href: "/repositories", label: "Repositories", icon: GitFork },
     { href: "/workspaces", label: "Workspaces", icon: Layers },
     { href: "/secrets", label: "Secrets", icon: KeyRound },
+    { href: "/ai-engine", label: "AI Engine", icon: BrainCircuit },
     { href: "/notifications", label: "Notifications", icon: Bell },
     { href: "/control-center", label: "AI Control", icon: Cpu },
     { href: "/settings", label: "Settings", icon: Settings },
