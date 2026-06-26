@@ -163,7 +163,7 @@ router.get("/", async (req, res) => {
 
 router.get("/:id", async (req, res) => {
   const userId = req.user!.sub;
-  const session = await getSession(userId, req.params["id"]!, res);
+  const session = await getSession(userId, req.params["id"] as string, res);
   if (!session) return;
   res.json({ workspace: fmtSession(session) });
 });
@@ -172,7 +172,7 @@ router.get("/:id", async (req, res) => {
 
 router.delete("/:id", async (req, res) => {
   const userId = req.user!.sub;
-  const session = await getSession(userId, req.params["id"]!, res);
+  const session = await getSession(userId, req.params["id"] as string, res);
   if (!session) return;
 
   await deleteWorkspaceSession(userId, session.id);
@@ -186,7 +186,7 @@ router.delete("/:id", async (req, res) => {
 router.post("/:id/branch", validateBody(branchSchema), async (req, res) => {
   const userId = req.user!.sub;
   const body = req.body as z.infer<typeof branchSchema>;
-  const session = await getSession(userId, req.params["id"]!, res);
+  const session = await getSession(userId, req.params["id"] as string, res);
   if (!session) return;
 
   assertWorkspaceExists(session, res);
@@ -206,7 +206,7 @@ router.post("/:id/branch", validateBody(branchSchema), async (req, res) => {
 
 router.get("/:id/diff", async (req, res) => {
   const userId = req.user!.sub;
-  const session = await getSession(userId, req.params["id"]!, res);
+  const session = await getSession(userId, req.params["id"] as string, res);
   if (!session) return;
 
   if (!assertWorkspaceExists(session, res)) return;
@@ -225,7 +225,7 @@ router.get("/:id/diff", async (req, res) => {
 router.post("/:id/validate", validateBody(validateSchema), async (req, res) => {
   const userId = req.user!.sub;
   const body = req.body as z.infer<typeof validateSchema>;
-  const session = await getSession(userId, req.params["id"]!, res);
+  const session = await getSession(userId, req.params["id"] as string, res);
   if (!session) return;
 
   if (!assertWorkspaceExists(session, res)) return;
@@ -254,7 +254,7 @@ router.post("/:id/validate", validateBody(validateSchema), async (req, res) => {
 router.post("/:id/commit", validateBody(commitSchema), async (req, res) => {
   const userId = req.user!.sub;
   const body = req.body as z.infer<typeof commitSchema>;
-  const session = await getSession(userId, req.params["id"]!, res);
+  const session = await getSession(userId, req.params["id"] as string, res);
   if (!session) return;
 
   if (!assertWorkspaceExists(session, res)) return;
@@ -292,7 +292,7 @@ router.post("/:id/commit", validateBody(commitSchema), async (req, res) => {
 
 router.post("/:id/push", async (req, res) => {
   const userId = req.user!.sub;
-  const session = await getSession(userId, req.params["id"]!, res);
+  const session = await getSession(userId, req.params["id"] as string, res);
   if (!session) return;
 
   if (!assertWorkspaceExists(session, res)) return;
@@ -317,7 +317,7 @@ router.post("/:id/push", async (req, res) => {
 router.post("/:id/pr", validateBody(prSchema), async (req, res) => {
   const userId = req.user!.sub;
   const body = req.body as z.infer<typeof prSchema>;
-  const session = await getSession(userId, req.params["id"]!, res);
+  const session = await getSession(userId, req.params["id"] as string, res);
   if (!session) return;
 
   const conn = await getUserConnection(userId, res);
@@ -361,7 +361,7 @@ router.post("/:id/pr", validateBody(prSchema), async (req, res) => {
 
 router.post("/:id/undo", async (req, res) => {
   const userId = req.user!.sub;
-  const session = await getSession(userId, req.params["id"]!, res);
+  const session = await getSession(userId, req.params["id"] as string, res);
   if (!session) return;
 
   if (!assertWorkspaceExists(session, res)) return;
@@ -383,7 +383,7 @@ router.post("/:id/undo", async (req, res) => {
 router.post("/:id/rollback", validateBody(rollbackSchema), async (req, res) => {
   const userId = req.user!.sub;
   const body = req.body as z.infer<typeof rollbackSchema>;
-  const session = await getSession(userId, req.params["id"]!, res);
+  const session = await getSession(userId, req.params["id"] as string, res);
   if (!session) return;
 
   if (!assertWorkspaceExists(session, res)) return;
@@ -406,7 +406,7 @@ router.post("/:id/rollback", validateBody(rollbackSchema), async (req, res) => {
 
 router.get("/:id/log", async (req, res) => {
   const userId = req.user!.sub;
-  const session = await getSession(userId, req.params["id"]!, res);
+  const session = await getSession(userId, req.params["id"] as string, res);
   if (!session) return;
 
   if (!assertWorkspaceExists(session, res)) return;

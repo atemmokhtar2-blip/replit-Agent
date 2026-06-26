@@ -376,6 +376,12 @@ importers:
       '@workspace/db':
         specifier: workspace:*
         version: link:../../lib/db
+      '@workspace/github':
+        specifier: workspace:*
+        version: link:../../lib/github
+      '@workspace/repo-agent':
+        specifier: workspace:*
+        version: link:../../lib/repo-agent
       bcrypt:
         specifier: ^6.0.0
         version: 6.0.0

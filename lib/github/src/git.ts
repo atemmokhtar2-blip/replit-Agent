@@ -148,11 +148,12 @@ export async function getDiffSummary(workspacePath: string): Promise<DiffSummary
     if ("binary" in f && f.binary) status = "modified";
     if (rawDiff.includes(`new file mode`) && rawDiff.includes(f.file)) status = "added";
     if (rawDiff.includes(`deleted file mode`) && rawDiff.includes(f.file)) status = "deleted";
+    const isText = "changes" in f;
     return {
       file: f.file,
-      changes: f.changes,
-      insertions: f.insertions,
-      deletions: f.deletions,
+      changes: isText ? (f as { changes: number }).changes : 0,
+      insertions: isText ? (f as { insertions: number }).insertions : 0,
+      deletions: isText ? (f as { deletions: number }).deletions : 0,
       status,
     };
   });
@@ -177,13 +178,16 @@ export async function getDiffBetweenBranches(
   const stat: DiffResult = await git.diffSummary([`${base}...${head}`]);
   const rawDiff = await git.diff([`${base}...${head}`, "--unified=3"]);
 
-  const files = stat.files.map((f) => ({
-    file: f.file,
-    changes: f.changes,
-    insertions: f.insertions,
-    deletions: f.deletions,
-    status: "modified" as const,
-  }));
+  const files = stat.files.map((f) => {
+    const isText = "changes" in f;
+    return {
+      file: f.file,
+      changes: isText ? (f as { changes: number }).changes : 0,
+      insertions: isText ? (f as { insertions: number }).insertions : 0,
+      deletions: isText ? (f as { deletions: number }).deletions : 0,
+      status: "modified" as const,
+    };
+  });
 
   return {
     files,

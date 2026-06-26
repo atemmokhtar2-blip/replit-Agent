@@ -46,7 +46,7 @@ router.post("/analyze", async (req: Request, res: Response) => {
   }
 
   try {
-    const understanding = await analyzeProject(userRequest.trim(), req.signal);
+    const understanding = await analyzeProject(userRequest.trim(), (req as { signal?: AbortSignal }).signal);
     return res.json({
       understanding,
       meta: {
@@ -81,7 +81,7 @@ router.post("/specify", async (req: Request, res: Response) => {
     const spec = await buildSpec(
       conversationId,
       understanding as ProjectUnderstanding,
-      req.signal,
+      (req as { signal?: AbortSignal }).signal,
     );
 
     const validation = validateArchitecture(spec);
@@ -195,10 +195,10 @@ router.post("/pipeline", async (req: Request, res: Response) => {
 
   try {
     console.log("[Pipeline] Stage 1: Analyzing project...");
-    const understanding = await analyzeProject(userRequest.trim(), req.signal);
+    const understanding = await analyzeProject(userRequest.trim(), (req as { signal?: AbortSignal }).signal);
 
     console.log("[Pipeline] Stage 2: Building execution spec...");
-    const spec = await buildSpec(conversationId, understanding, req.signal);
+    const spec = await buildSpec(conversationId, understanding, (req as { signal?: AbortSignal }).signal);
 
     console.log("[Pipeline] Stage 3: Validating architecture...");
     const validation = validateArchitecture(spec);

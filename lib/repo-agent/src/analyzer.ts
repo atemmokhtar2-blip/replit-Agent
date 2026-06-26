@@ -39,7 +39,7 @@ export async function analyzeRepository(repoPath: string): Promise<ProjectAnalys
   const hasDocker = existsSync(join(repoPath, "Dockerfile")) || existsSync(join(repoPath, "docker-compose.yml")) || existsSync(join(repoPath, "docker-compose.yaml"));
   const hasCI = existsSync(join(repoPath, ".github/workflows")) || existsSync(join(repoPath, ".gitlab-ci.yml")) || existsSync(join(repoPath, ".circleci"));
   const hasTests = hasTestFiles(repoPath, pkg);
-  const hasTypeScript = existsSync(join(repoPath, "tsconfig.json")) || (pkg?.devDependencies?.["typescript"] != null);
+  const hasTypeScript = existsSync(join(repoPath, "tsconfig.json")) || ((pkg?.devDependencies as Record<string, string> | undefined)?.["typescript"] != null);
   const isMonorepo = existsSync(join(repoPath, "pnpm-workspace.yaml")) || existsSync(join(repoPath, "lerna.json")) || existsSync(join(repoPath, "nx.json")) || pkg?.workspaces != null;
   const hasDatabase = detectDatabase(pkg, repoPath);
   const deploymentConfig = detectDeploymentConfig(repoPath, pkg);
@@ -58,9 +58,9 @@ export async function analyzeRepository(repoPath: string): Promise<ProjectAnalys
     hasTests,
     hasTypeScript,
     isMonorepo,
-    dependencies: pkg?.dependencies ?? {},
-    devDependencies: pkg?.devDependencies ?? {},
-    scripts: pkg?.scripts ?? {},
+    dependencies: (pkg?.dependencies as Record<string, string> | undefined) ?? {},
+    devDependencies: (pkg?.devDependencies as Record<string, string> | undefined) ?? {},
+    scripts: (pkg?.scripts as Record<string, string> | undefined) ?? {},
     detectedEnvVars: envVars,
     folderTree,
     routes,

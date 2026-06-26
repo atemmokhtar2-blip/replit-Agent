@@ -35,7 +35,7 @@ export async function saveSpec(
     userId,
     summary: spec.summary,
     projectType: spec.projectType,
-    understanding: spec.understanding as Record<string, unknown>,
+    understanding: spec.understanding as unknown as Record<string, unknown>,
     spec: spec as unknown as Record<string, unknown>,
     version,
     status: validationResult?.valid === false ? "validation_failed" : "draft",

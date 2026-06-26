@@ -7,7 +7,6 @@ import notificationsRouter from "./notifications";
 import adminRouter from "./admin";
 import auditRouter from "./audit";
 
-// Placeholder module routers (architecture ready, no business logic yet)
 import aiRouter from "./modules/ai";
 import aiControlRouter from "./modules/ai-control";
 import deploymentRouter from "./modules/deployment";
@@ -15,6 +14,11 @@ import memoryRouter from "./modules/memory";
 import storageModuleRouter from "./modules/storage";
 import agentsRouter from "./modules/agents";
 import understandingRouter from "./modules/understanding";
+
+import githubRouter from "./modules/github";
+import repositoriesRouter from "./modules/repositories";
+import secretsCenterRouter from "./modules/secrets-center";
+import workspacesRouter from "./modules/workspaces";
 
 const router: IRouter = Router();
 
@@ -29,7 +33,7 @@ router.use("/v1/notifications", notificationsRouter);
 router.use("/v1/admin", adminRouter);
 router.use("/v1/audit", auditRouter);
 
-// API v1 — Future Modules (architecture placeholders)
+// API v1 — AI Modules
 router.use("/v1/ai", aiRouter);
 router.use("/v1/ai", aiControlRouter);
 router.use("/v1/deployments", deploymentRouter);
@@ -37,5 +41,11 @@ router.use("/v1/memory", memoryRouter);
 router.use("/v1/storage", storageModuleRouter);
 router.use("/v1/agents", agentsRouter);
 router.use("/v1/understanding", understandingRouter);
+
+// API v1 — Repository Agent Modules
+router.use("/v1/github", githubRouter);
+router.use("/v1/repositories", repositoriesRouter);
+router.use("/v1/secrets", secretsCenterRouter);
+router.use("/v1/workspaces", workspacesRouter);
 
 export default router;

@@ -17,6 +17,12 @@
     },
     {
       "path": "../../lib/ai-provider"
+    },
+    {
+      "path": "../../lib/github"
+    },
+    {
+      "path": "../../lib/repo-agent"
     }
   ]
 }
