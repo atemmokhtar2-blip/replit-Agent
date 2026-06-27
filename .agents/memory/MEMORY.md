@@ -20,3 +20,4 @@
 - [Repo import autostart flow](repo-import-autostart.md) — after import, ?autostart=1 in URL auto-creates a conversation and triggers AI to analyze/install/run; uses handleSendRef pattern to avoid stale closure; autoStartConvId scopes message to one conversation only.
 - [Clone LFS env var fix](repo-import-autostart.md) — simple-git blocks --config filter.lfs.smudge= as unsafe; use GIT_LFS_SKIP_SMUDGE=1 env via simpleGit().env() instead.
 - [DB schema must be pushed after install](replit-migration-setup.md) — run pnpm --filter @workspace/db run push after fresh clone/install; ai_provider_registry table missing causes ProviderManager to have 0 providers and all planner calls to fail.
+- [OAuth system architecture](oauth-system.md) — HMAC-signed CSRF state (no session storage); AES-256-GCM encrypted client secrets via key-vault; admin routes at /v1/admin/auth/providers; provider registry in lib/oauth/registry.ts; users.passwordHash is nullable for OAuth-only accounts.

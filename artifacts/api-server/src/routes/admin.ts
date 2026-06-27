@@ -21,8 +21,10 @@ function formatUser(u: typeof usersTable.$inferSelect) {
   return {
     id: u.id,
     username: u.username,
+    name: u.name ?? null,
     email: u.email,
     avatar_url: u.avatarUrl,
+    provider: u.provider ?? "local",
     role: u.role,
     is_active: u.isActive,
     last_login: u.lastLogin?.toISOString() ?? null,

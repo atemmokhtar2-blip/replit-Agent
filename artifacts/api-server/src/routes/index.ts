@@ -5,6 +5,7 @@ import usersRouter from "./users";
 import projectsRouter from "./projects";
 import notificationsRouter from "./notifications";
 import adminRouter from "./admin";
+import adminAuthRouter from "./admin-auth";
 import auditRouter from "./audit";
 
 import aiRouter from "./modules/ai";
@@ -34,6 +35,7 @@ router.use("/v1/users", usersRouter);
 router.use("/v1/projects", projectsRouter);
 router.use("/v1/notifications", notificationsRouter);
 router.use("/v1/admin", adminRouter);
+router.use("/v1/admin/auth", adminAuthRouter);
 router.use("/v1/audit", auditRouter);
 
 // API v1 — AI Modules

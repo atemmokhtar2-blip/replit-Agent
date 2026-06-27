@@ -7,3 +7,4 @@ export * from "./future";
 export * from "./providers";
 export * from "./repository-agent";
 export * from "./ai-providers";
+export * from "./oauth-configs";

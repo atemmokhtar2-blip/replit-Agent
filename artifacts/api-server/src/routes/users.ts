@@ -20,12 +20,14 @@ router.use(authenticate);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function buildUserResponse(user: { id: string; username: string; email: string; avatarUrl: string | null; role: string; isActive: boolean; lastLogin: Date | null; createdAt: Date; updatedAt: Date }) {
+function buildUserResponse(user: typeof usersTable.$inferSelect) {
   return {
     id: user.id,
     username: user.username,
+    name: user.name ?? null,
     email: user.email,
     avatar_url: user.avatarUrl,
+    provider: user.provider ?? "local",
     role: user.role,
     is_active: user.isActive,
     last_login: user.lastLogin?.toISOString() ?? null,

@@ -16,6 +16,7 @@ import Login from "@/pages/Login";
 import Register from "@/pages/Register";
 import ForgotPassword from "@/pages/ForgotPassword";
 import ResetPassword from "@/pages/ResetPassword";
+import OAuthCallback from "@/pages/OAuthCallback";
 
 import Dashboard from "@/pages/Dashboard";
 import Projects from "@/pages/Projects";
@@ -30,6 +31,7 @@ import ControlCenter from "@/pages/ControlCenter";
 import Workspaces from "@/pages/Workspaces";
 import AIEngine from "@/pages/AIEngine";
 import AIProvidersPage from "@/pages/AIProvidersPage";
+import Profile from "@/pages/Profile";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -147,6 +149,14 @@ const AIProvidersPageWrapper = () => (
   </ProtectedRoute>
 );
 
+const ProfilePage = () => (
+  <ProtectedRoute>
+    <AppLayout>
+      <Profile />
+    </AppLayout>
+  </ProtectedRoute>
+);
+
 function Router() {
   return (
     <Switch>
@@ -155,6 +165,7 @@ function Router() {
       <Route path="/register" component={Register} />
       <Route path="/forgot-password" component={ForgotPassword} />
       <Route path="/reset-password" component={ResetPassword} />
+      <Route path="/auth/callback" component={OAuthCallback} />
       <Route path="/chat" component={ChatPage} />
       <Route path="/dashboard" component={DashboardPage} />
       <Route path="/projects" component={ProjectsPage} />
@@ -168,6 +179,7 @@ function Router() {
       <Route path="/workspaces" component={WorkspacesPage} />
       <Route path="/ai-engine" component={AIEnginePage} />
       <Route path="/ai-providers" component={AIProvidersPageWrapper} />
+      <Route path="/profile" component={ProfilePage} />
       <Route component={NotFound} />
     </Switch>
   );
