@@ -55,18 +55,34 @@ export async function cloneRepository(options: CloneOptions): Promise<SimpleGit>
 
   await mkdir(destination, { recursive: true });
 
-  // Skip LFS smudge/checkout via env vars — avoids simple-git's unsafe-operations
-  // block that rejects --config filter.lfs.smudge= flags.
-  // Also clear GIT_ASKPASS and GIT_TERMINAL_PROMPT: Replit injects GIT_ASKPASS
-  // into the process environment, which simple-git's block-unsafe-operations plugin
-  // rejects when it sees that variable set without allowUnsafeAskPass enabled.
-  // Setting these to "" removes the problematic values from git's environment.
+  // Build a safe env for simple-git by REMOVING every variable that the
+  // @simple-git/argv-parser vulnerabilityCheck considers dangerous (it checks
+  // the spawned-process env, not process.env directly, and flags any KEY that
+  // appears in its blocklist even when the value is empty-string).
+  //
+  // Replit injects GIT_ASKPASS, GIT_SSH_COMMAND and similar vars which all
+  // trigger the "not permitted without enabling allowUnsafeXxx" error.
+  // We destructure them out so they are completely absent from the env object
+  // passed to simpleGit().env(...).
+  /* eslint-disable @typescript-eslint/no-unused-vars */
+  const {
+    GIT_ASKPASS, SSH_ASKPASS,
+    GIT_SSH, GIT_SSH_COMMAND,
+    GIT_EDITOR, GIT_SEQUENCE_EDITOR,
+    GIT_PAGER, GIT_PROXY_COMMAND,
+    GIT_TEMPLATE_DIR, GIT_EXEC_PATH,
+    GIT_EXTERNAL_DIFF,
+    GIT_CONFIG_GLOBAL, GIT_CONFIG_SYSTEM,
+    GIT_CONFIG_COUNT, GIT_CONFIG,
+    EDITOR, PAGER, PREFIX,
+    ...safeEnv
+  } = process.env;
+  /* eslint-enable @typescript-eslint/no-unused-vars */
+
   const lfsEnv: NodeJS.ProcessEnv = {
-    ...process.env,
+    ...safeEnv,
     GIT_LFS_SKIP_SMUDGE: "1",
-    GIT_ASKPASS: "",
-    GIT_TERMINAL_PROMPT: "0",
-    GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no -o BatchMode=yes",
+    GIT_TERMINAL_PROMPT: "0",   // not in blocklist, just disables prompts
   };
 
   const args: string[] = [`--depth=${depth}`];
