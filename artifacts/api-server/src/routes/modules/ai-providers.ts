@@ -22,9 +22,9 @@
 
 import { Router } from "express";
 import { z } from "zod/v4";
-import { requireAuth }    from "../../middleware/auth.js";
-import { requireRole }    from "../../lib/rbac.js";
-import { validateBody }   from "../../middleware/validate.js";
+import { authenticate as requireAuth } from "../../middlewares/authenticate.js";
+import { requireRole }    from "../../middlewares/authorize.js";
+import { validateBody }   from "../../middlewares/validate.js";
 import { providerManager } from "../../lib/provider-manager/index.js";
 import type { RoutingStrategy } from "../../lib/provider-manager/types.js";
 
