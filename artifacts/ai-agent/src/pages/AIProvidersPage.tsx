@@ -5,7 +5,7 @@ import {
   CheckCircle2, XCircle, AlertTriangle, Clock, Zap, Activity, RefreshCw,
   Plus, Trash2, Eye, EyeOff, ToggleLeft, ToggleRight, TestTube2,
   ChevronDown, ChevronUp, Server, Key, BarChart3, List,
-  Shield, TrendingUp, Cpu,
+  Shield, TrendingUp, Cpu, Rotate3d, Star,
 } from "lucide-react";
 import { Button }   from "@/components/ui/button";
 import { Input }    from "@/components/ui/input";
@@ -25,8 +25,8 @@ import { apiFetch } from "@/lib/api";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type ProviderStatus = "healthy" | "degraded" | "unhealthy" | "disabled";
-type KeyStatus      = "active" | "disabled" | "exhausted" | "cooling" | "error";
+type ProviderStatus  = "healthy" | "degraded" | "unhealthy" | "disabled";
+type KeyStatus       = "active" | "disabled" | "exhausted" | "cooling" | "error";
 type RoutingStrategy = "round-robin" | "least-recently-used" | "lowest-latency" | "random" | "priority" | "least-failures";
 
 interface KeyHealthReport {
@@ -115,26 +115,56 @@ function HealthBar({ score }: { score: number }) {
   );
 }
 
-function fmt(ms: number) { return ms > 0 ? `${Math.round(ms)}ms` : "—"; }
-function pct(r: number)  { return `${Math.round(r * 100)}%`; }
+function fmt(ms: number)   { return ms > 0 ? `${Math.round(ms)}ms` : "—"; }
+function pct(r: number)    { return `${Math.round(r * 100)}%`; }
 function relTime(iso?: string) {
   if (!iso) return "—";
   const d = new Date(iso);
   const sec = Math.floor((Date.now() - d.getTime()) / 1000);
-  if (sec < 60) return `${sec}s ago`;
+  if (sec < 60)   return `${sec}s ago`;
   if (sec < 3600) return `${Math.floor(sec / 60)}m ago`;
   return `${Math.floor(sec / 3600)}h ago`;
+}
+
+/** Derive per-provider key stats from the health report */
+function deriveKeyStats(p: ProviderHealthReport) {
+  const healthyKeys  = p.keys.filter(k => k.enabled && k.status === "active").length;
+  const disabledKeys = p.keys.filter(k => !k.enabled || k.status === "disabled" || k.status === "error").length;
+
+  // Current active key = most recently used enabled key
+  const activeKey = p.keys
+    .filter(k => k.enabled && k.status === "active")
+    .sort((a, b) => {
+      if (!a.lastUsed && !b.lastUsed) return 0;
+      if (!a.lastUsed) return 1;
+      if (!b.lastUsed) return -1;
+      return new Date(b.lastUsed).getTime() - new Date(a.lastUsed).getTime();
+    })[0] ?? null;
+
+  // Last error = key with most recent failure
+  const lastErrorKey = p.keys
+    .filter(k => k.lastFailure)
+    .sort((a, b) => new Date(b.lastFailure!).getTime() - new Date(a.lastFailure!).getTime())[0] ?? null;
+
+  // Last rotation = most recent lastSuccess across all keys (proxy for rotation activity)
+  const lastSuccessTs = p.keys
+    .map(k => k.lastSuccess)
+    .filter(Boolean)
+    .sort()
+    .at(-1);
+
+  return { healthyKeys, disabledKeys, activeKey, lastErrorKey, lastSuccessTs };
 }
 
 // ── Add Key Dialog ────────────────────────────────────────────────────────────
 
 function AddKeyDialog({ slug, onAdded }: { slug: string; onAdded: () => void }) {
-  const [open, setOpen]   = useState(false);
-  const [name, setName]   = useState("");
+  const [open, setOpen]     = useState(false);
+  const [name, setName]     = useState("");
   const [apiKey, setApiKey] = useState("");
-  const [show, setShow]   = useState(false);
+  const [show, setShow]     = useState(false);
 
-  const qc = useQueryClient();
+  const qc  = useQueryClient();
   const add = useMutation({
     mutationFn: () => apiFetch(`${BASE}/${slug}/keys`, { method: "POST", body: JSON.stringify({ name, apiKey }) }),
     onSuccess: () => {
@@ -196,7 +226,9 @@ function RotateKeyDialog({ slug, keyId, keyName }: { slug: string; keyId: string
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm" variant="ghost" className="h-6 px-2 text-xs text-zinc-400 hover:text-white">Rotate</Button>
+        <Button size="sm" variant="ghost" className="h-6 px-2 text-xs text-zinc-400 hover:text-white gap-1">
+          <Rotate3d className="h-3 w-3" /> Rotate
+        </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader><DialogTitle>Rotate Key — {keyName}</DialogTitle></DialogHeader>
@@ -211,7 +243,7 @@ function RotateKeyDialog({ slug, keyId, keyName }: { slug: string; keyId: string
         <DialogFooter>
           <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
           <Button onClick={() => rotate.mutate()} disabled={!val || rotate.isPending}>
-            {rotate.isPending ? "Rotating…" : "Rotate"}
+            {rotate.isPending ? "Rotating…" : "Rotate Now"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -255,13 +287,13 @@ function KeyRow({ slug, k }: { slug: string; k: KeyHealthReport }) {
           <KeyStatusBadge status={k.status} />
           {k.cooldownUntil && <span className="text-xs text-blue-400"><Clock className="inline h-3 w-3 mr-0.5" />cooling</span>}
         </div>
-        <div className="flex items-center gap-4 mt-1 text-xs text-zinc-500">
-          <span>{k.totalRequests} reqs</span>
+        <div className="flex items-center gap-4 mt-1 text-xs text-zinc-500 flex-wrap">
+          <span>{k.totalRequests.toLocaleString()} reqs</span>
           <span>{pct(k.successRate)} ok</span>
           <span>{fmt(k.avgResponseTimeMs)} avg</span>
-          {k.consecutiveFailures > 0 && <span className="text-red-400">{k.consecutiveFailures} fails</span>}
+          {k.consecutiveFailures > 0 && <span className="text-red-400">{k.consecutiveFailures} consec fails</span>}
           <span>used {relTime(k.lastUsed)}</span>
-          {k.lastError && <span className="truncate max-w-[160px] text-red-400" title={k.lastError}>{k.lastError.slice(0, 40)}</span>}
+          {k.lastError && <span className="truncate max-w-[200px] text-red-400" title={k.lastError}>{k.lastError.slice(0, 50)}</span>}
         </div>
       </div>
       <div className="flex items-center gap-1 shrink-0">
@@ -282,9 +314,11 @@ function KeyRow({ slug, k }: { slug: string; k: KeyHealthReport }) {
 
 // ── Provider card ─────────────────────────────────────────────────────────────
 
-function ProviderCard({ p }: { p: ProviderHealthReport }) {
+function ProviderCard({ p, isCurrentActive }: { p: ProviderHealthReport; isCurrentActive: boolean }) {
   const [expanded, setExpanded] = useState(false);
   const qc = useQueryClient();
+
+  const { healthyKeys, disabledKeys, activeKey, lastErrorKey, lastSuccessTs } = deriveKeyStats(p);
 
   const toggle = useMutation({
     mutationFn: () => apiFetch(`${BASE}/${p.slug}/${p.enabled ? "disable" : "enable"}`, { method: "POST" }),
@@ -311,7 +345,7 @@ function ProviderCard({ p }: { p: ProviderHealthReport }) {
   const STRATEGIES: RoutingStrategy[] = ["round-robin","least-recently-used","lowest-latency","random","priority","least-failures"];
 
   return (
-    <Card className="border-white/8 bg-zinc-900/60 backdrop-blur-sm">
+    <Card className={`border-white/8 bg-zinc-900/60 backdrop-blur-sm ${isCurrentActive ? "ring-1 ring-violet-500/40" : ""}`}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
@@ -322,21 +356,32 @@ function ProviderCard({ p }: { p: ProviderHealthReport }) {
               <div className="flex items-center gap-2 flex-wrap">
                 <CardTitle className="text-sm font-semibold text-white">{p.displayName}</CardTitle>
                 <ProviderStatusBadge status={p.status} />
+                {isCurrentActive && (
+                  <Badge variant="outline" className="text-xs bg-violet-500/15 text-violet-400 border-violet-500/30 gap-1">
+                    <Star className="h-2.5 w-2.5" /> Active
+                  </Badge>
+                )}
                 {!p.enabled && <Badge variant="outline" className="text-xs text-zinc-500 border-zinc-600">Off</Badge>}
               </div>
               <div className="flex items-center gap-3 mt-0.5 text-xs text-zinc-500">
                 <span>Priority {p.priority}</span>
-                <span>{p.activeKeys}/{p.totalKeys} keys active</span>
+                <span className="text-emerald-400">{healthyKeys} healthy</span>
+                <span className="text-red-400/80">{disabledKeys} disabled</span>
+                <span className="text-zinc-500">{p.totalKeys} total</span>
                 <span>{p.totalRequests.toLocaleString()} reqs</span>
               </div>
             </div>
           </div>
-          <div className="flex items-center gap-1.5 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0 flex-wrap justify-end">
             <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => testProvider.mutate()} disabled={testProvider.isPending || !p.enabled}>
-              {testProvider.isPending ? <RefreshCw className="h-3 w-3 animate-spin" /> : <TestTube2 className="h-3 w-3 mr-1" />}
+              {testProvider.isPending ? <RefreshCw className="h-3 w-3 animate-spin mr-1" /> : <TestTube2 className="h-3 w-3 mr-1" />}
               Test
             </Button>
-            <Button size="sm" variant="ghost" className={`h-7 px-2 text-xs ${p.enabled ? "text-amber-400" : "text-emerald-400"}`} onClick={() => toggle.mutate()} disabled={toggle.isPending}>
+            <Button
+              size="sm" variant="ghost"
+              className={`h-7 px-2 text-xs ${p.enabled ? "text-amber-400 hover:text-amber-300" : "text-emerald-400 hover:text-emerald-300"}`}
+              onClick={() => toggle.mutate()} disabled={toggle.isPending}
+            >
               {p.enabled ? <ToggleRight className="h-3.5 w-3.5 mr-1" /> : <ToggleLeft className="h-3.5 w-3.5 mr-1" />}
               {p.enabled ? "Disable" : "Enable"}
             </Button>
@@ -345,13 +390,13 @@ function ProviderCard({ p }: { p: ProviderHealthReport }) {
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {/* Stats row */}
+        {/* Stats grid */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { label: "Health",   value: <HealthBar score={p.healthScore} /> },
-            { label: "Success",  value: pct(p.successRate) },
-            { label: "Latency",  value: fmt(p.avgLatencyMs) },
-            { label: "Failures", value: p.failureCount.toLocaleString() },
+            { label: "Health Score", value: <HealthBar score={p.healthScore} /> },
+            { label: "Success Rate", value: pct(p.successRate) },
+            { label: "Avg Latency",  value: fmt(p.avgLatencyMs) },
+            { label: "Failures",     value: p.failureCount.toLocaleString() },
           ].map(({ label, value }) => (
             <div key={label} className="rounded-md bg-white/4 px-2.5 py-2">
               <p className="text-xs text-zinc-500 mb-0.5">{label}</p>
@@ -360,11 +405,55 @@ function ProviderCard({ p }: { p: ProviderHealthReport }) {
           ))}
         </div>
 
+        {/* Active key + last error row */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="rounded-md bg-white/4 px-2.5 py-2">
+            <p className="text-xs text-zinc-500 mb-0.5 flex items-center gap-1">
+              <Key className="h-3 w-3" /> Current Active Key
+            </p>
+            {activeKey ? (
+              <div className="flex items-center gap-2">
+                <span className="text-sm font-medium text-white truncate">{activeKey.name}</span>
+                <code className="text-xs font-mono text-zinc-500 shrink-0">{activeKey.prefix}…</code>
+              </div>
+            ) : (
+              <span className="text-sm text-zinc-500 italic">none</span>
+            )}
+            {activeKey?.lastUsed && (
+              <p className="text-xs text-zinc-600 mt-0.5">last used {relTime(activeKey.lastUsed)}</p>
+            )}
+          </div>
+
+          <div className="rounded-md bg-white/4 px-2.5 py-2">
+            <p className="text-xs text-zinc-500 mb-0.5 flex items-center gap-1">
+              <AlertTriangle className="h-3 w-3" /> Last Error
+            </p>
+            {lastErrorKey?.lastError ? (
+              <>
+                <p className="text-xs text-red-400 truncate" title={lastErrorKey.lastError}>
+                  {lastErrorKey.lastError.slice(0, 60)}
+                </p>
+                <p className="text-xs text-zinc-600 mt-0.5">
+                  {lastErrorKey.name} · {relTime(lastErrorKey.lastFailure)}
+                </p>
+              </>
+            ) : (
+              <span className="text-sm text-emerald-400">No errors</span>
+            )}
+          </div>
+        </div>
+
+        {/* Last activity row */}
+        <div className="flex items-center gap-4 text-xs text-zinc-500">
+          <span>Last health check: {relTime(p.lastHealthCheck)}</span>
+          {lastSuccessTs && <span>Last rotation activity: {relTime(lastSuccessTs)}</span>}
+        </div>
+
         {/* Routing strategy */}
         <div className="flex items-center gap-3">
-          <span className="text-xs text-zinc-500 shrink-0">Strategy:</span>
+          <span className="text-xs text-zinc-500 shrink-0">Routing:</span>
           <Select onValueChange={(v) => setStrategy.mutate(v as RoutingStrategy)} disabled={setStrategy.isPending}>
-            <SelectTrigger className="h-7 text-xs w-48">
+            <SelectTrigger className="h-7 text-xs w-52">
               <SelectValue placeholder={p.slug} />
             </SelectTrigger>
             <SelectContent>
@@ -378,9 +467,12 @@ function ProviderCard({ p }: { p: ProviderHealthReport }) {
         {/* Keys section */}
         <div>
           <div className="flex items-center justify-between mb-2">
-            <button className="flex items-center gap-1.5 text-xs font-medium text-zinc-300 hover:text-white" onClick={() => setExpanded(!expanded)}>
+            <button
+              className="flex items-center gap-1.5 text-xs font-medium text-zinc-300 hover:text-white"
+              onClick={() => setExpanded(!expanded)}
+            >
               <Key className="h-3 w-3" />
-              API Keys ({p.totalKeys})
+              API Keys ({p.totalKeys}) — {healthyKeys} healthy · {disabledKeys} disabled
               {expanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
             </button>
             <AddKeyDialog slug={p.slug} onAdded={() => setExpanded(true)} />
@@ -389,7 +481,9 @@ function ProviderCard({ p }: { p: ProviderHealthReport }) {
           {expanded && (
             <div className="space-y-1.5">
               {p.keys.length === 0 ? (
-                <p className="text-xs text-zinc-500 italic py-2 text-center">No keys added. Add one above.</p>
+                <p className="text-xs text-zinc-500 italic py-2 text-center">
+                  No keys added yet. Add one above or set <code className="font-mono">{p.slug.toUpperCase().replace(/-/g,"_")}_API_KEY</code> environment variable.
+                </p>
               ) : (
                 p.keys.map(k => <KeyRow key={k.id} slug={p.slug} k={k} />)
               )}
@@ -451,7 +545,7 @@ type Tab = "providers" | "requests";
 
 export default function AIProvidersPage() {
   const qc = useQueryClient();
-  const { data: health, isLoading, refetch } = useHealth();
+  const { data: health, isLoading, refetch, isFetching } = useHealth();
   const [tab, setTab] = useState<Tab>("providers");
 
   const runHealthCheck = useMutation({
@@ -472,26 +566,46 @@ export default function AIProvidersPage() {
     .slice()
     .sort((a, b) => a.priority - b.priority) ?? [];
 
+  // Current active provider = highest priority enabled provider with healthy keys
+  const currentActiveProvider = sortedProviders.find(p => p.enabled && p.activeKeys > 0);
+
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* ── Header ──────────────────────────────────────────────────────────── */}
       <div className="shrink-0 border-b border-white/8 bg-zinc-950/80 backdrop-blur px-6 py-4">
-        <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-500/15 text-violet-400">
               <Cpu className="h-5 w-5" />
             </div>
             <div>
               <h1 className="text-lg font-semibold text-white">AI Provider Manager</h1>
-              <p className="text-xs text-zinc-500">Multi-provider orchestration with automatic failover</p>
+              <p className="text-xs text-zinc-500">
+                Multi-provider orchestration · auto-discovery · key rotation · failover
+              </p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs" onClick={() => void refetch()}>
-              <RefreshCw className="h-3.5 w-3.5" /> Refresh
+            <Button
+              size="sm" variant="outline"
+              className="gap-1.5 h-8 text-xs"
+              onClick={() => void refetch()}
+              disabled={isFetching}
+              title="Refresh Keys — re-reads provider health and newly discovered env keys"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
+              Refresh Keys
             </Button>
-            <Button size="sm" className="gap-1.5 h-8 text-xs bg-violet-600 hover:bg-violet-500" onClick={() => runHealthCheck.mutate()} disabled={runHealthCheck.isPending}>
-              {runHealthCheck.isPending ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Activity className="h-3.5 w-3.5" />}
+            <Button
+              size="sm"
+              className="gap-1.5 h-8 text-xs bg-violet-600 hover:bg-violet-500"
+              onClick={() => runHealthCheck.mutate()}
+              disabled={runHealthCheck.isPending}
+            >
+              {runHealthCheck.isPending
+                ? <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                : <Activity className="h-3.5 w-3.5" />
+              }
               Run Health Check
             </Button>
           </div>
@@ -502,25 +616,66 @@ export default function AIProvidersPage() {
 
         {/* ── Summary cards ─────────────────────────────────────────────────── */}
         {health && (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-            {[
-              { icon: <Server className="h-4 w-4" />,    label: "Active Providers", value: `${health.activeProviders} / ${health.totalProviders}`, color: "text-violet-400" },
-              { icon: <Key className="h-4 w-4" />,       label: "Active Keys",      value: `${health.activeKeys} / ${health.totalKeys}`,           color: "text-blue-400"   },
-              { icon: <TrendingUp className="h-4 w-4" />, label: "Success Rate",    value: pct(health.overallSuccess),                             color: overallStatusColor() },
-              { icon: <Zap className="h-4 w-4" />,       label: "Avg Latency",      value: fmt(health.avgLatencyMs),                                color: "text-amber-400"  },
-            ].map(({ icon, label, value, color }) => (
-              <Card key={label} className="border-white/8 bg-zinc-900/60 p-4">
-                <div className={`flex items-center gap-2 mb-2 ${color}`}>{icon}<span className="text-xs text-zinc-500">{label}</span></div>
-                <p className="text-2xl font-bold text-white">{value}</p>
-              </Card>
-            ))}
-          </div>
+          <>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {[
+                {
+                  icon: <Server className="h-4 w-4" />,
+                  label: "Active Providers",
+                  value: `${health.activeProviders} / ${health.totalProviders}`,
+                  color: "text-violet-400",
+                },
+                {
+                  icon: <Key className="h-4 w-4" />,
+                  label: "Discovered Keys",
+                  value: `${health.activeKeys} healthy / ${health.totalKeys} total`,
+                  color: "text-blue-400",
+                },
+                {
+                  icon: <TrendingUp className="h-4 w-4" />,
+                  label: "Overall Success",
+                  value: pct(health.overallSuccess),
+                  color: overallStatusColor(),
+                },
+                {
+                  icon: <Zap className="h-4 w-4" />,
+                  label: "Avg Latency",
+                  value: fmt(health.avgLatencyMs),
+                  color: "text-amber-400",
+                },
+              ].map(({ icon, label, value, color }) => (
+                <Card key={label} className="border-white/8 bg-zinc-900/60 p-4">
+                  <div className={`flex items-center gap-2 mb-2 ${color}`}>{icon}<span className="text-xs text-zinc-500">{label}</span></div>
+                  <p className="text-xl font-bold text-white leading-tight">{value}</p>
+                </Card>
+              ))}
+            </div>
+
+            {/* Current active provider banner */}
+            {currentActiveProvider && (
+              <div className="flex items-center gap-3 rounded-xl border border-violet-500/20 bg-violet-500/5 px-4 py-3">
+                <Star className="h-4 w-4 text-violet-400 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <span className="text-xs text-zinc-400">Current Active Provider: </span>
+                  <span className="text-sm font-semibold text-white">{currentActiveProvider.displayName}</span>
+                  <span className="text-xs text-zinc-500 ml-2">
+                    {currentActiveProvider.activeKeys} key{currentActiveProvider.activeKeys !== 1 ? "s" : ""} ready
+                    · {pct(currentActiveProvider.successRate)} success rate
+                    · {fmt(currentActiveProvider.avgLatencyMs)} avg
+                  </span>
+                </div>
+                <ProviderStatusBadge status={currentActiveProvider.status} />
+              </div>
+            )}
+          </>
         )}
 
         {/* ── Tabs ──────────────────────────────────────────────────────────── */}
         <div className="flex gap-1 rounded-lg bg-white/5 p-1 w-fit">
-          {([["providers", <Shield className="h-3.5 w-3.5" />, "Providers"],
-             ["requests",  <List className="h-3.5 w-3.5" />, "Request Log"]] as const).map(([id, icon, label]) => (
+          {([
+            ["providers", <Shield className="h-3.5 w-3.5" key="s" />, "Providers"],
+            ["requests",  <List   className="h-3.5 w-3.5" key="l" />, "Request Log"],
+          ] as const).map(([id, icon, label]) => (
             <button
               key={id}
               onClick={() => setTab(id as Tab)}
@@ -544,7 +699,13 @@ export default function AIProvidersPage() {
             {!isLoading && sortedProviders.length === 0 && (
               <div className="py-16 text-center text-sm text-zinc-500">No providers configured.</div>
             )}
-            {sortedProviders.map(p => <ProviderCard key={p.slug} p={p} />)}
+            {sortedProviders.map(p => (
+              <ProviderCard
+                key={p.slug}
+                p={p}
+                isCurrentActive={p.slug === currentActiveProvider?.slug}
+              />
+            ))}
           </div>
         )}
 
@@ -554,13 +715,13 @@ export default function AIProvidersPage() {
             <div className="flex items-center gap-2">
               <BarChart3 className="h-4 w-4 text-zinc-500" />
               <span className="text-sm font-medium text-zinc-300">Recent Requests</span>
-              <span className="text-xs text-zinc-600">(last 30, auto-refreshes every 15s)</span>
+              <span className="text-xs text-zinc-600">(last 30 · auto-refreshes every 15s)</span>
             </div>
             <RequestLogTable />
           </div>
         )}
 
-        {/* ── Last check timestamp ───────────────────────────────────────────── */}
+        {/* ── Footer timestamp ───────────────────────────────────────────────── */}
         {health?.generatedAt && (
           <p className="text-xs text-zinc-600 text-right">
             Last refreshed {relTime(health.generatedAt)}

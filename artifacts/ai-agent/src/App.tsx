@@ -1,13 +1,15 @@
-import { Switch, Route, Router as WouterRouter } from "wouter";
+import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/ThemeProvider";
-import { AuthProvider } from "@/components/AuthProvider";
+import { AuthProvider, useAuth } from "@/components/AuthProvider";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AppLayout } from "@/components/AppLayout";
 import { TaskProvider } from "@/lib/task-store";
 import { TaskExecutionPanel } from "@/components/execution/TaskExecutionPanel";
+import { Loader2 } from "lucide-react";
+import { useEffect } from "react";
 
 import NotFound from "@/pages/not-found";
 
@@ -41,7 +43,29 @@ const queryClient = new QueryClient({
   },
 });
 
-// ── Stable page components for protected routes ──────────────────────────────
+// ── Root redirect: unauthenticated → /login, authenticated → /dashboard ──────
+
+function RootPage() {
+  const { isAuthenticated, isLoading } = useAuth();
+  const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (isLoading) return;
+    if (isAuthenticated) {
+      setLocation("/dashboard");
+    } else {
+      setLocation("/login");
+    }
+  }, [isLoading, isAuthenticated, setLocation]);
+
+  return (
+    <div className="flex h-screen w-full items-center justify-center bg-background">
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+    </div>
+  );
+}
+
+// ── Stable page components for protected routes ───────────────────────────────
 // All routes MUST use the `component` prop (not children) inside <Switch>.
 // Mixing the two patterns causes Wouter's reconciler to produce an inconsistent
 // React element tree across renders, which triggers React 18's insertBefore
@@ -157,15 +181,23 @@ const ProfilePage = () => (
   </ProtectedRoute>
 );
 
+const LandingPage = () => <Landing />;
+const LoginPage = () => <Login />;
+const RegisterPage = () => <Register />;
+const ForgotPasswordPage = () => <ForgotPassword />;
+const ResetPasswordPage = () => <ResetPassword />;
+const OAuthCallbackPage = () => <OAuthCallback />;
+
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={Landing} />
-      <Route path="/login" component={Login} />
-      <Route path="/register" component={Register} />
-      <Route path="/forgot-password" component={ForgotPassword} />
-      <Route path="/reset-password" component={ResetPassword} />
-      <Route path="/auth/callback" component={OAuthCallback} />
+      <Route path="/" component={RootPage} />
+      <Route path="/landing" component={LandingPage} />
+      <Route path="/login" component={LoginPage} />
+      <Route path="/register" component={RegisterPage} />
+      <Route path="/forgot-password" component={ForgotPasswordPage} />
+      <Route path="/reset-password" component={ResetPasswordPage} />
+      <Route path="/auth/callback" component={OAuthCallbackPage} />
       <Route path="/chat" component={ChatPage} />
       <Route path="/dashboard" component={DashboardPage} />
       <Route path="/projects" component={ProjectsPage} />

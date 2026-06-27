@@ -682,17 +682,23 @@ export class ProviderManager {
     }
   }
 
-  // ── Seed env var keys (only if no DB key exists for that provider) ──────────
+  // ── Seed env var keys — unlimited, gap-tolerant, regex-based scan ───────────
   //
-  // Discovers keys from environment variables automatically.
-  // Supports both single-key and multi-key formats:
-  //   OPENROUTER_API_KEY          → single key named "env-var"
-  //   OPENROUTER_API_KEY_1        → multiple keys named "env-var-1", "env-var-2", ...
-  //   OPENROUTER_API_KEY_2
-  //   ...
+  // Automatically discovers ALL API keys from environment variables.
+  // Supports any number of keys with no gaps required:
   //
-  // Scanning stops at the first missing numbered suffix (no gaps required).
-  // No code changes are needed when adding more keys — just add the env var.
+  //   OPENROUTER_API_KEY          → "env-var"
+  //   OPENROUTER_API_KEY_1        → "env-var-1"
+  //   OPENROUTER_API_KEY_2        → "env-var-2"
+  //   OPENROUTER_API_KEY_999      → "env-var-999"
+  //   GEMINI_API_KEY_1 .. _999    → same pattern
+  //   GROQ_API_KEY_1 .. _999      → same pattern
+  //   CLOUDFLARE_API_KEY_1..      → same pattern
+  //   MISTRAL_API_KEY_1..         → same pattern
+  //
+  // Adding a new key (e.g. OPENROUTER_API_KEY_1000) is picked up on next
+  // restart with zero code changes. Keys already in DB are deduplicated by
+  // keyPrefix so they are never double-inserted.
 
   private seedEnvKeys(): void {
     const slugPrefixMap: Record<string, string> = {
@@ -703,31 +709,41 @@ export class ProviderManager {
       mistral:    "MISTRAL_API_KEY",
     };
 
+    // Scan ALL env vars once, bucket them by provider slug
+    const envEntries = Object.entries(process.env);
+
     for (const [slug, envPrefix] of Object.entries(slugPrefixMap)) {
       const p = this.providers.get(slug);
       if (!p) continue;
-      if (p.keys.length > 0) continue; // already has DB keys — skip
 
-      // Collect all keys for this provider from env
+      // Build a set of key-prefixes already loaded (from DB) to avoid duplicates
+      const existingPrefixes = new Set(p.keys.map(k => k.keyPrefix));
+
+      // Match env vars: exact name OR name followed by _<digits>
+      // e.g. OPENROUTER_API_KEY, OPENROUTER_API_KEY_1, OPENROUTER_API_KEY_999
+      const pattern = new RegExp(`^${envPrefix}(_\\d+)?$`);
+
       const discovered: { name: string; plainKey: string }[] = [];
 
-      // Single key (no suffix): PROVIDER_KEY
-      const single = process.env[envPrefix]?.trim();
-      if (single) discovered.push({ name: "env-var", plainKey: single });
-
-      // Numbered keys: PROVIDER_KEY_1, PROVIDER_KEY_2, ..., PROVIDER_KEY_N
-      for (let i = 1; ; i++) {
-        const val = process.env[`${envPrefix}_${i}`]?.trim();
-        if (!val) break; // stop at first gap
-        discovered.push({ name: `env-var-${i}`, plainKey: val });
+      for (const [envKey, envVal] of envEntries) {
+        if (!pattern.test(envKey)) continue;
+        const val = envVal?.trim();
+        if (!val) continue;
+        const suffix = envKey.slice(envPrefix.length); // "" | "_1" | "_2" …
+        const name   = suffix ? `env-var${suffix}` : "env-var";
+        discovered.push({ name, plainKey: val });
       }
 
       if (discovered.length === 0) continue;
 
+      let added = 0;
       for (const { name, plainKey } of discovered) {
+        const prefix       = keyPrefix(plainKey);
+        if (existingPrefixes.has(prefix)) continue; // already in DB — skip
+        existingPrefixes.add(prefix);
+
         const id           = genId();
         const keyEncrypted = encryptKey(plainKey);
-        const prefix       = keyPrefix(plainKey);
 
         const runtime: RuntimeKeyState = {
           id, providerSlug: slug, name,
@@ -737,6 +753,7 @@ export class ProviderManager {
           consecutiveFailures: 0, avgResponseTimeMs: 0,
         };
         p.keys.push(runtime);
+        added++;
 
         // Persist to DB asynchronously
         void db.insert(aiProviderKeysTable).values({
@@ -748,9 +765,12 @@ export class ProviderManager {
         }).onConflictDoNothing().catch(() => {});
       }
 
-      // Enable provider whenever it has at least one env key
-      p.enabled = true;
-      console.log(`[ProviderManager] Seeded ${discovered.length} env key(s) for provider '${slug}'`);
+      if (added > 0) {
+        p.enabled = true;
+        console.log(`[ProviderManager] Seeded ${added} new env key(s) for provider '${slug}' (${discovered.length} discovered, ${discovered.length - added} already in DB)`);
+      } else if (discovered.length > 0) {
+        console.log(`[ProviderManager] Provider '${slug}': ${discovered.length} env key(s) already in DB — skipping`);
+      }
     }
   }
 
