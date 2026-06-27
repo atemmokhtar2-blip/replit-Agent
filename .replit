@@ -74,5 +74,3 @@ externalPort = 8000
 [userenv.shared]
 
 [userenv.production]
-JWT_SECRET = "b07cea3ab5054337820e8c2ab1faf759868f031a913712a59f0b6e7d1df5293093ea0c1b56c7c79f6b7776ef94d55f91"
-JWT_REFRESH_SECRET = "a594a8633a31bd8ae29c64d38dfa136ac671ecb1ddc72beb7830cf98972051a6d1d45cc0b880ed18ef0589683a731cb3"
