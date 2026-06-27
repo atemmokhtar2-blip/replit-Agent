@@ -375,6 +375,13 @@ function detectSectionInChunk(
   return null;
 }
 
+// ── CompleteFn type (injected from api-server's ProviderManager) ───────────────
+
+export type PlannerCompleteFn = (
+  messages: Array<{ role: string; content: string }>,
+  options: { taskType?: string; maxTokens?: number; temperature?: number },
+) => Promise<{ content: string; providerSlug?: string; model?: string }>;
+
 // ── Main streaming export ──────────────────────────────────────────────────────
 
 export async function runPlannerStream(
@@ -382,6 +389,7 @@ export async function runPlannerStream(
   history: PlannerStreamMessage[],
   onEvent: (event: PlannerStreamEvent) => void,
   signal: AbortSignal,
+  completeFn?: PlannerCompleteFn,
 ): Promise<void> {
   // ── Stage 1: Analyze Request ────────────────────────────────────────────────
   onEvent({ type: "stage_start", stage: 1, name: "Analyze Request" });
@@ -399,7 +407,7 @@ export async function runPlannerStream(
   // For AMBIGUOUS messages without an API key, default to PROJECT
   // For AMBIGUOUS with API key, use LLM classification
   if (intent === "AMBIGUOUS") {
-    if (apiKey) {
+    if (completeFn || apiKey) {
       try {
         const classifyMessages = [
           {
@@ -413,11 +421,13 @@ Reply with only the single word.`,
           { role: "user", content: userMessage.slice(0, 500) },
         ];
 
-        const response = await callOpenRouterConversational(
-          classifyMessages,
-          apiKey,
-          signal,
-        );
+        let response: string;
+        if (completeFn) {
+          const res = await completeFn(classifyMessages, { taskType: "general", maxTokens: 10, temperature: 0.1 });
+          response = res.content;
+        } else {
+          response = await callOpenRouterConversational(classifyMessages, apiKey!, signal);
+        }
         const word = response.trim().toUpperCase();
         if (word === "GREETING" || word === "CONVERSATION" || word === "PROJECT") {
           intent = word as IntentType;
@@ -436,7 +446,7 @@ Reply with only the single word.`,
 
   // ── Non-project intent: conversational response ─────────────────────────────
   if (intent === "GREETING" || intent === "CONVERSATION") {
-    if (!apiKey) {
+    if (!completeFn && !apiKey) {
       const fallback =
         intent === "GREETING"
           ? "Hello! Add your OPENROUTER_API_KEY in Replit Secrets to enable AI responses."
@@ -452,11 +462,13 @@ Reply with only the single word.`,
     ];
 
     try {
-      const content = await callOpenRouterConversational(
-        conversationalMessages,
-        apiKey,
-        signal,
-      );
+      let content: string;
+      if (completeFn) {
+        const res = await completeFn(conversationalMessages, { taskType: "general", maxTokens: 400, temperature: 0.7 });
+        content = res.content;
+      } else {
+        content = await callOpenRouterConversational(conversationalMessages, apiKey!, signal);
+      }
       onEvent({ type: "conversation", content });
     } catch {
       onEvent({
@@ -469,7 +481,7 @@ Reply with only the single word.`,
 
   // ── PROJECT intent: run full 8-stage pipeline ────────────────────────────────
 
-  if (!apiKey) {
+  if (!completeFn && !apiKey) {
     onEvent({
       type: "error",
       message:
@@ -515,35 +527,53 @@ Reply with only the single word.`,
 
   let succeeded = false;
 
-  for (let i = 0; i < PLANNER_MODELS.length; i++) {
-    const model = PLANNER_MODELS[i]!;
-    if (signal.aborted) break;
-    if (i > 0) console.log(`[FALLBACK_ACTIVATED] switching to fallback model=${model} attempt=${i + 1}/${PLANNER_MODELS.length}`);
-    try {
-      const result = await callOpenRouterStream(
-        model,
-        planMessages,
-        apiKey,
-        handleChunk,
-        signal,
-      );
-      finalModel = result.model as PlannerModel;
-      succeeded = true;
-      break;
-    } catch (err) {
+  // ── Primary: stream through OpenRouter (if apiKey available) ─────────────────
+  if (apiKey) {
+    for (let i = 0; i < PLANNER_MODELS.length; i++) {
+      const model = PLANNER_MODELS[i]!;
       if (signal.aborted) break;
-      const msg = err instanceof Error ? err.message : String(err);
-      const status = (err as { status?: number }).status;
-      console.error(`[MODEL_FAILED] planner stream model=${model} attempt=${i + 1} error=${msg.slice(0, 120)}`);
-      // Non-retryable: invalid API key
-      if (status === 401 || status === 403) {
-        onEvent({
-          type: "error",
-          message: `Invalid OpenRouter API key. Please check OPENROUTER_API_KEY in Replit Secrets.`,
-        });
-        return;
+      if (i > 0) console.log(`[FALLBACK_ACTIVATED] switching to fallback model=${model} attempt=${i + 1}/${PLANNER_MODELS.length}`);
+      try {
+        const result = await callOpenRouterStream(
+          model,
+          planMessages,
+          apiKey,
+          handleChunk,
+          signal,
+        );
+        finalModel = result.model as PlannerModel;
+        succeeded = true;
+        break;
+      } catch (err) {
+        if (signal.aborted) break;
+        const msg = err instanceof Error ? err.message : String(err);
+        const status = (err as { status?: number }).status;
+        console.error(`[MODEL_FAILED] planner stream model=${model} attempt=${i + 1} error=${msg.slice(0, 120)}`);
+        // Non-retryable: invalid API key
+        if (status === 401 || status === 403) {
+          onEvent({
+            type: "error",
+            message: `Invalid OpenRouter API key. Please check OPENROUTER_API_KEY in Replit Secrets.`,
+          });
+          return;
+        }
+        // Continue to next model
       }
-      // Continue to next model
+    }
+  }
+
+  // ── Provider-manager fallback: non-streaming via injected completeFn ──────────
+  if (!succeeded && completeFn && !signal.aborted) {
+    console.log("[FALLBACK_ACTIVATED] all streaming models failed — using ProviderManager completeFn");
+    try {
+      const res = await completeFn(planMessages, { taskType: "planning", maxTokens: 8000, temperature: 0.3 });
+      // Emit the full content as one chunk
+      handleChunk(res.content);
+      finalModel = res.model ?? res.providerSlug ?? "provider-manager";
+      succeeded = true;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[MODEL_FAILED] completeFn fallback error=${msg.slice(0, 120)}`);
     }
   }
 

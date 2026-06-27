@@ -21,6 +21,8 @@ import { registry } from "@workspace/ai-provider";
 import type { ProviderConfig } from "@workspace/ai-provider";
 import { aiRouter, modelRegistry, TASK_TYPES, runPlanner, runPlannerStream } from "@workspace/ai-orchestrator";
 import type { PlannerStreamEvent } from "@workspace/ai-orchestrator";
+import { providerManager } from "../../lib/provider-manager/index.js";
+import type { TaskType } from "../../lib/provider-manager/types.js";
 import { generateId } from "../../lib/auth.js";
 import { authenticate } from "../../middlewares/authenticate.js";
 import { validateBody } from "../../middlewares/validate.js";
@@ -373,7 +375,13 @@ router.post("/planner", validateBody(plannerSchema), async (req, res) => {
     .map((m) => ({ role: m.role, content: m.content }));
 
   // Run planner engine — never throws; errors returned as friendly content
-  const result = await runPlanner(message, historyForPlanner);
+  const result = await runPlanner(message, historyForPlanner, (msgs, opts) =>
+    providerManager.complete(msgs as Array<{ role: "user" | "assistant" | "system"; content: string }>, {
+      taskType: opts.taskType as TaskType | undefined,
+      maxTokens: opts.maxTokens,
+      temperature: opts.temperature,
+    })
+  );
 
   // Persist planner response
   const [assistantMsg] = await db
@@ -551,6 +559,12 @@ router.post("/planner/stream", validateBody(plannerSchema), async (req, res) => 
         sendEvent(event);
       },
       abortController.signal,
+      (msgs, opts) =>
+        providerManager.complete(msgs as Array<{ role: "user" | "assistant" | "system"; content: string }>, {
+          taskType: opts.taskType as TaskType | undefined,
+          maxTokens: opts.maxTokens,
+          temperature: opts.temperature,
+        }),
     );
 
     if (aborted) return;

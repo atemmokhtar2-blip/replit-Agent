@@ -568,11 +568,19 @@ async function callOpenRouterConversational(
   throw lastError ?? new Error("all conversational models failed");
 }
 
+// ── CompleteFn type (mirrors PlannerCompleteFn in planner-stream.ts) ──────────
+
+export type PlannerCompleteFnNonStream = (
+  messages: Array<{ role: string; content: string }>,
+  options: { taskType?: string; maxTokens?: number; temperature?: number },
+) => Promise<{ content: string; providerSlug?: string; model?: string }>;
+
 // ── Main export ────────────────────────────────────────────────────────────────
 
 export async function runPlanner(
   userMessage: string,
   history: PlannerMessage[] = [],
+  completeFn?: PlannerCompleteFnNonStream,
 ): Promise<PlannerResult> {
   console.log("[Planner] Provider = OpenRouter");
 
@@ -583,9 +591,23 @@ export async function runPlanner(
   const apiKey = sanitizeEnvString(process.env["OPENROUTER_API_KEY"]);
 
   // ── Step 2: LLM classification for ambiguous messages ────────────────────────
-  if (intent === "AMBIGUOUS" && apiKey) {
+  if (intent === "AMBIGUOUS" && (completeFn || apiKey)) {
     console.log("[Planner] Intent ambiguous — consulting LLM classifier");
-    intent = await classifyIntentWithLLM(userMessage, apiKey);
+    if (completeFn) {
+      try {
+        const classifyMessages = [
+          { role: "system", content: "Classify as GREETING, CONVERSATION, or PROJECT. Reply with only the single word." },
+          { role: "user", content: userMessage.slice(0, 500) },
+        ];
+        const res = await completeFn(classifyMessages, { taskType: "general", maxTokens: 10, temperature: 0.1 });
+        const word = res.content.trim().toUpperCase();
+        if (word === "GREETING" || word === "CONVERSATION" || word === "PROJECT") {
+          intent = word as typeof intent;
+        }
+      } catch { /* fall through */ }
+    } else if (apiKey) {
+      intent = await classifyIntentWithLLM(userMessage, apiKey);
+    }
     console.log(`[Planner] LLM-based intent: ${intent}`);
   }
 
@@ -608,7 +630,7 @@ export async function runPlanner(
 
   // Non-project intents: greetings and casual conversation
   if (intent === "GREETING" || intent === "CONVERSATION") {
-    if (!apiKey) {
+    if (!completeFn && !apiKey) {
       // No API key — return a friendly static fallback (no plan, no config guide)
       return {
         content: intent === "GREETING"
@@ -629,37 +651,19 @@ export async function runPlanner(
     ];
 
     try {
-      const result = await callOpenRouterConversational(
-        conversationalMessages,
-        apiKey,
-      );
-      return {
-        content: result.content,
-        model: result.model,
-        provider: "openrouter",
-      };
+      if (completeFn) {
+        const res = await completeFn(conversationalMessages, { taskType: "general", maxTokens: 400, temperature: 0.7 });
+        return { content: res.content, model: res.model ?? res.providerSlug ?? "provider-manager", provider: res.providerSlug ?? "provider-manager" };
+      }
+      const result = await callOpenRouterConversational(conversationalMessages, apiKey!);
+      return { content: result.content, model: result.model, provider: "openrouter" };
     } catch (err) {
       console.error("[Planner] Conversational response failed:", err);
-      // Fall back to static response rather than surfacing an error
-      return {
-        content: buildGreetingFallback(),
-        model: "none",
-        provider: "openrouter",
-      };
+      return { content: buildGreetingFallback(), model: "none", provider: "openrouter" };
     }
   }
 
   // Project intent — run the full planner
-
-  if (!apiKey) {
-    console.warn("[Planner] OPENROUTER_API_KEY is not set");
-    return {
-      content: buildConfigurationGuide(userMessage),
-      model: "none",
-      provider: "openrouter",
-      error: "missing_api_key",
-    };
-  }
 
   const messages = [
     { role: "system", content: SYSTEM_PROMPT },
@@ -669,50 +673,51 @@ export async function runPlanner(
     { role: "user", content: userMessage },
   ];
 
-  const modelErrors: { model: PlannerModel; error: ClassifiedError }[] = [];
+  // ── Primary: OpenRouter streaming models ─────────────────────────────────────
+  if (apiKey) {
+    const modelErrors: { model: PlannerModel; error: ClassifiedError }[] = [];
 
-  for (let i = 0; i < PLANNER_MODELS.length; i++) {
-    const model = PLANNER_MODELS[i]!;
-    if (i > 0) console.log(`[FALLBACK_ACTIVATED] planner switching to model=${model} attempt=${i + 1}/${PLANNER_MODELS.length}`);
+    for (let i = 0; i < PLANNER_MODELS.length; i++) {
+      const model = PLANNER_MODELS[i]!;
+      if (i > 0) console.log(`[FALLBACK_ACTIVATED] planner switching to model=${model} attempt=${i + 1}/${PLANNER_MODELS.length}`);
 
-    try {
-      const result = await callOpenRouter(model, messages, apiKey);
-      console.log(`[PLANNER_COMPLETED] model=${result.model} contentLength=${result.content.length}`);
-      return {
-        content: result.content,
-        model: result.model,
-        provider: "openrouter",
-      };
-    } catch (err) {
-      const raw = err as Error & { status?: number };
-      const classified = classifyError(err, raw.status);
-
-      console.error(
-        `[MODEL_FAILED] planner model=${model} attempt=${i + 1} type=${classified.type} message=${classified.message.slice(0, 120)}`,
-      );
-
-      modelErrors.push({ model, error: classified });
-
-      // Non-retryable errors abort the entire chain immediately
-      if (!classified.retryable) {
-        return {
-          content: buildFatalErrorMessage(classified, model),
-          model,
-          provider: "openrouter",
-          error: classified.type,
-        };
+      try {
+        const result = await callOpenRouter(model, messages, apiKey);
+        console.log(`[PLANNER_COMPLETED] model=${result.model} contentLength=${result.content.length}`);
+        return { content: result.content, model: result.model, provider: "openrouter" };
+      } catch (err) {
+        const raw = err as Error & { status?: number };
+        const classified = classifyError(err, raw.status);
+        console.error(`[MODEL_FAILED] planner model=${model} attempt=${i + 1} type=${classified.type} message=${classified.message.slice(0, 120)}`);
+        modelErrors.push({ model, error: classified });
+        if (!classified.retryable) {
+          return { content: buildFatalErrorMessage(classified, model), model, provider: "openrouter", error: classified.type };
+        }
       }
     }
   }
 
+  // ── Provider-manager fallback ─────────────────────────────────────────────────
+  if (completeFn) {
+    console.log("[FALLBACK_ACTIVATED] OpenRouter exhausted — using ProviderManager completeFn");
+    try {
+      const res = await completeFn(messages, { taskType: "planning", maxTokens: 8000, temperature: 0.3 });
+      console.log(`[PLANNER_COMPLETED] provider=${res.providerSlug} model=${res.model} contentLength=${res.content.length}`);
+      return { content: res.content, model: res.model ?? res.providerSlug ?? "provider-manager", provider: res.providerSlug ?? "provider-manager" };
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[MODEL_FAILED] completeFn fallback error=${msg.slice(0, 120)}`);
+    }
+  }
+
   // All models exhausted
+  if (!completeFn && !apiKey) {
+    console.warn("[Planner] OPENROUTER_API_KEY is not set and no completeFn provided");
+    return { content: buildConfigurationGuide(userMessage), model: "none", provider: "openrouter", error: "missing_api_key" };
+  }
+
   console.error("[Planner] All models in fallback chain failed");
-  return {
-    content: buildAllFailedMessage(modelErrors),
-    model: "none",
-    provider: "openrouter",
-    error: "all_models_failed",
-  };
+  return { content: buildAllFailedMessage([]), model: "none", provider: "openrouter", error: "all_models_failed" };
 }
 
 // ── Response builders ──────────────────────────────────────────────────────────

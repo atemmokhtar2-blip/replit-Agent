@@ -117,6 +117,6 @@ export type {
   MemoryEntry,
   ConversationContext,
 } from "./types.js";
-export type { PlannerMessage, PlannerResult } from "./planner.js";
-export type { PlannerStreamEvent, PlannerStreamMessage } from "./planner-stream.js";
+export type { PlannerMessage, PlannerResult, PlannerCompleteFnNonStream } from "./planner.js";
+export type { PlannerStreamEvent, PlannerStreamMessage, PlannerCompleteFn } from "./planner-stream.js";
 export type { UserAiPrefs } from "./memory.js";
