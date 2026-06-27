@@ -1,16 +1,20 @@
 /**
- * PlannerWorkspace — Clean Chat UI
+ * PlannerWorkspace — Premium Chat Interface
  *
- * Chat shows only 4 states:
- *   1. Planning…  — user message + thinking bubble
- *   2. Building… — blueprint ready, auto-executing in background
- *   3. Verifying… — checks running with live progress
- *   4. ✅ Ready   — VerificationCard with "Open Preview" button
- *
- * Execution details (stages, check results) live in the floating TaskExecutionPanel.
+ * Features:
+ *  • Live streaming tokens with markdown rendering
+ *  • Stop generation button
+ *  • Message footer (model · elapsed · tokens)
+ *  • Edit previous prompt
+ *  • Live execution log panel
+ *  • Generated files panel with download ZIP
+ *  • Syntax-highlighted code blocks with copy
+ *  • Auto-scroll with scroll-lock detection
+ *  • Animated stage progress inline in chat
+ *  • Full verification card
  */
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import React from "react";
 import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
 import {
@@ -34,6 +38,10 @@ import type { StageState } from "./design-system/AgentTimeline";
 import { VerificationCard, VerificationProgress } from "./design-system/VerificationCard";
 import { TaskDetailsDrawer } from "./execution/TaskDetailsDrawer";
 import type { TaskStatus } from "@/lib/task-store";
+import { MarkdownRenderer } from "./chat/MarkdownRenderer";
+import { LiveLogPanel } from "./chat/LiveLogPanel";
+import type { LogEntry } from "./chat/LiveLogPanel";
+import { GeneratedFilesPanel } from "./chat/GeneratedFilesPanel";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -43,6 +51,12 @@ function autoTitle(content: string) {
 
 function formatTime(iso: string) {
   return new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function formatElapsed(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
 }
 
 function countBlueprintSections(content: string): number {
@@ -60,36 +74,221 @@ const INITIAL_STAGES: StageState[] = PLANNER_STAGES.map((s) => ({
   status: "pending",
 }));
 
-// ── Message bubble components ──────────────────────────────────────────────────
+let _logCounter = 0;
+function makeLogId() { return `log-${++_logCounter}`; }
 
-function UserBubble({ content, timestamp }: { content: string; timestamp?: string }) {
+function makeLog(level: LogEntry["level"], message: string): LogEntry {
+  return { id: makeLogId(), timestamp: new Date().toISOString(), level, message };
+}
+
+// ── Icons ──────────────────────────────────────────────────────────────────────
+
+function StopIcon() {
   return (
-    <div className="flex justify-end">
-      <div className="max-w-[75%] sm:max-w-[65%]">
-        <div className="rounded-2xl rounded-tr-md bg-primary px-4 py-2.5 text-sm text-primary-foreground leading-relaxed shadow-sm">
-          {content}
-        </div>
-        {timestamp && (
-          <p className="mt-0.5 text-right text-[10px] text-muted-foreground/40">{formatTime(timestamp)}</p>
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="2" width="9" height="9" rx="1" fill="currentColor" opacity="0.15" />
+      <rect x="2" y="2" width="9" height="9" rx="1" />
+    </svg>
+  );
+}
+
+function SendIcon() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12.5 1.5L6.5 7.5M12.5 1.5L8.5 12.5L6.5 7.5M12.5 1.5L1.5 5.5L6.5 7.5" />
+    </svg>
+  );
+}
+
+function CopyIconSm() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.3">
+      <rect x="3.5" y="3.5" width="6.5" height="6.5" rx="1" />
+      <path d="M2.5 7.5H1.5a1 1 0 01-1-1V1.5a1 1 0 011-1h5a1 1 0 011 1v1" />
+    </svg>
+  );
+}
+
+function EditIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M7.5 1.5l2 2-6 6H1.5v-2l6-6z" />
+    </svg>
+  );
+}
+
+function RefreshIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+      <path d="M9.5 2A5 5 0 1 0 9.8 6.5" />
+      <polyline points="9.5,0 9.5,2.5 7,2.5" />
+    </svg>
+  );
+}
+
+function FilesIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="1.3">
+      <path d="M1.5 2a1 1 0 011-1h4.5l2 2H11.5a1 1 0 011 1v7a1 1 0 01-1 1H2.5a1 1 0 01-1-1V2z" />
+    </svg>
+  );
+}
+
+// ── Message footer (model badge + timing) ──────────────────────────────────────
+
+function MessageFooter({
+  model,
+  elapsedMs,
+  timestamp,
+}: {
+  model?: string;
+  elapsedMs?: number;
+  timestamp?: string;
+}) {
+  const parts: React.ReactNode[] = [];
+
+  if (timestamp) {
+    parts.push(<span key="ts">{formatTime(timestamp)}</span>);
+  }
+  if (model) {
+    const shortModel = model.split("/").pop() ?? model;
+    parts.push(
+      <span key="model" className="flex items-center gap-1">
+        <span className="h-1.5 w-1.5 rounded-full bg-primary/50" />
+        {shortModel}
+      </span>
+    );
+  }
+  if (elapsedMs != null) {
+    parts.push(<span key="elapsed">{formatElapsed(elapsedMs)}</span>);
+  }
+
+  if (parts.length === 0) return null;
+
+  return (
+    <div className="mt-1 flex items-center gap-2 text-[10px] text-muted-foreground/40 flex-wrap">
+      {parts.map((p, i) => (
+        <React.Fragment key={i}>
+          {i > 0 && <span className="opacity-40">·</span>}
+          {p}
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
+// ── User bubble ────────────────────────────────────────────────────────────────
+
+function UserBubble({
+  content,
+  timestamp,
+  onEdit,
+}: {
+  content: string;
+  timestamp?: string;
+  onEdit?: (newContent: string) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState(content);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => { if (editing) textareaRef.current?.focus(); }, [editing]);
+
+  const submitEdit = () => {
+    const trimmed = editValue.trim();
+    if (trimmed && trimmed !== content && onEdit) onEdit(trimmed);
+    setEditing(false);
+  };
+
+  return (
+    <div className="flex justify-end group">
+      <div className="max-w-[78%] sm:max-w-[68%]">
+        {editing ? (
+          <div className="flex flex-col gap-2">
+            <textarea
+              ref={textareaRef}
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submitEdit(); }
+                if (e.key === "Escape") { setEditing(false); setEditValue(content); }
+              }}
+              className="w-full resize-none rounded-2xl rounded-tr-md border border-primary/40 bg-primary/5 px-4 py-2.5 text-sm text-foreground leading-relaxed focus:outline-none focus:ring-1 focus:ring-primary/30 min-h-[60px]"
+              rows={3}
+            />
+            <div className="flex gap-1.5 justify-end">
+              <button
+                onClick={() => { setEditing(false); setEditValue(content); }}
+                className="rounded-lg border border-border px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={submitEdit}
+                className="rounded-lg bg-primary px-2.5 py-1 text-xs text-primary-foreground hover:bg-primary/90 transition-colors"
+              >
+                Send
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="relative rounded-2xl rounded-tr-md bg-primary px-4 py-2.5 text-sm text-primary-foreground leading-relaxed shadow-sm">
+              <p className="whitespace-pre-wrap pr-5">{content}</p>
+              {onEdit && (
+                <button
+                  onClick={() => { setEditValue(content); setEditing(true); }}
+                  className="absolute right-2 top-2 rounded p-0.5 opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity text-primary-foreground/70 hover:text-primary-foreground"
+                  aria-label="Edit message"
+                >
+                  <EditIcon />
+                </button>
+              )}
+            </div>
+            {timestamp && (
+              <p className="mt-0.5 text-right text-[10px] text-muted-foreground/40">{formatTime(timestamp)}</p>
+            )}
+          </>
         )}
       </div>
     </div>
   );
 }
 
-function AssistantBubble({ children, timestamp }: { children: React.ReactNode; timestamp?: string }) {
+// ── Assistant bubble wrapper ───────────────────────────────────────────────────
+
+function AssistantBubble({
+  children,
+  timestamp,
+  model,
+  elapsedMs,
+  onCopy,
+}: {
+  children: React.ReactNode;
+  timestamp?: string;
+  model?: string;
+  elapsedMs?: number;
+  onCopy?: () => void;
+}) {
   return (
-    <div className="flex gap-2.5 items-start">
+    <div className="flex gap-2.5 items-start group">
       <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-muted/50 border border-border mt-0.5">
         <AIPulse size={15} color="#6366f1" active />
       </div>
       <div className="flex-1 min-w-0">
-        <div className="rounded-2xl rounded-tl-md bg-card border border-border px-4 py-3 text-sm text-foreground leading-relaxed shadow-sm">
+        <div className="rounded-2xl rounded-tl-md bg-card border border-border px-4 py-3 text-sm text-foreground leading-relaxed shadow-sm relative">
+          {onCopy && (
+            <button
+              onClick={onCopy}
+              className="absolute right-2 top-2 rounded p-1 opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+              aria-label="Copy message"
+            >
+              <CopyIconSm />
+            </button>
+          )}
           {children}
         </div>
-        {timestamp && (
-          <p className="mt-0.5 text-[10px] text-muted-foreground/40">{formatTime(timestamp)}</p>
-        )}
+        <MessageFooter model={model} elapsedMs={elapsedMs} timestamp={timestamp} />
       </div>
     </div>
   );
@@ -97,12 +296,12 @@ function AssistantBubble({ children, timestamp }: { children: React.ReactNode; t
 
 // ── Thinking indicator ─────────────────────────────────────────────────────────
 
-function ThinkingBubble() {
+function ThinkingBubble({ stageName }: { stageName?: string }) {
   return (
     <AssistantBubble>
       <div className="flex flex-col gap-2">
-        <p className="text-foreground/80">
-          Understood. I'm analyzing your project and designing the architecture.
+        <p className="text-foreground/70 text-xs">
+          {stageName ?? "Analyzing your project…"}
         </p>
         <div className="flex items-center gap-[4px]">
           {[0, 1, 2].map((i) => (
@@ -118,19 +317,80 @@ function ThinkingBubble() {
   );
 }
 
-// ── Building bubble — shown while execution pipeline runs ─────────────────────
+// ── Streaming content bubble ───────────────────────────────────────────────────
+
+function StreamingBubble({
+  content,
+  stageName,
+  currentStage,
+  totalStages,
+}: {
+  content: string;
+  stageName?: string;
+  currentStage?: number;
+  totalStages?: number;
+}) {
+  const progress = currentStage && totalStages
+    ? Math.round((currentStage / totalStages) * 100)
+    : null;
+
+  return (
+    <AssistantBubble>
+      {/* Stage progress bar */}
+      {stageName && (
+        <div className="mb-3 flex flex-col gap-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-medium text-primary/70">{stageName}</span>
+            {progress != null && (
+              <span className="text-[10px] text-muted-foreground/50 tabular-nums">{progress}%</span>
+            )}
+          </div>
+          <div className="h-0.5 rounded-full bg-border/50 overflow-hidden">
+            <div
+              className="h-full rounded-full bg-primary/60 transition-all duration-500"
+              style={{ width: `${progress ?? 30}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Live content */}
+      {content ? (
+        <div className="min-w-0">
+          <MarkdownRenderer content={content} />
+          <span className="inline-block h-3.5 w-0.5 bg-primary/70 animate-pulse ml-0.5 align-middle" />
+        </div>
+      ) : (
+        <div className="flex items-center gap-[4px] py-1">
+          {[0, 1, 2].map((i) => (
+            <span
+              key={i}
+              className="inline-block w-1.5 h-1.5 rounded-full bg-primary/50 animate-bounce"
+              style={{ animationDelay: `${i * 0.15}s`, animationDuration: "0.9s" }}
+            />
+          ))}
+        </div>
+      )}
+    </AssistantBubble>
+  );
+}
+
+// ── Building bubble ────────────────────────────────────────────────────────────
 
 function BuildingBubble({ stageName }: { stageName?: string }) {
   return (
     <AssistantBubble>
       <div className="flex flex-col gap-2">
-        <p className="text-foreground/80">
-          Blueprint ready. Now building and verifying your project…
-        </p>
+        <div className="flex items-center gap-2">
+          <div className="h-1.5 w-1.5 rounded-full bg-violet-500 animate-pulse flex-shrink-0" />
+          <p className="text-foreground/80 text-sm">
+            Blueprint ready — building and verifying your project…
+          </p>
+        </div>
         {stageName && (
-          <p className="text-[11px] text-muted-foreground/50 font-mono">{stageName}</p>
+          <p className="text-[11px] text-muted-foreground/50 font-mono pl-3.5">{stageName}</p>
         )}
-        <div className="flex items-center gap-[4px]">
+        <div className="flex items-center gap-[4px] pl-3.5">
           {[0, 1, 2].map((i) => (
             <span
               key={i}
@@ -144,27 +404,35 @@ function BuildingBubble({ stageName }: { stageName?: string }) {
   );
 }
 
-// ── Completion card ────────────────────────────────────────────────────────────
+// ── Completion bubble ──────────────────────────────────────────────────────────
 
 function CompletionBubble({
   task,
   onViewBlueprint,
+  elapsedMs,
 }: {
   task: ExecutionTask;
   onViewBlueprint: () => void;
+  elapsedMs?: number;
 }) {
   const sectionCount = task.result ? countBlueprintSections(task.result.content) : 0;
+  const [copied, setCopied] = useState(false);
 
-  const handleCopyAll = () => {
-    if (task.result) {
-      navigator.clipboard.writeText(task.result.content).then(() => {
-        toast.success("Blueprint copied to clipboard");
-      });
-    }
+  const handleCopy = () => {
+    if (!task.result) return;
+    navigator.clipboard.writeText(task.result.content).then(() => {
+      setCopied(true);
+      toast.success("Blueprint copied to clipboard");
+      setTimeout(() => setCopied(false), 2000);
+    });
   };
 
   return (
-    <AssistantBubble>
+    <AssistantBubble
+      model={task.result?.model}
+      elapsedMs={elapsedMs}
+      onCopy={task.result ? handleCopy : undefined}
+    >
       <div className="flex flex-col gap-3">
         <div className="flex items-center gap-2">
           <div className="flex h-5 w-5 items-center justify-center rounded-full bg-green-500/20 flex-shrink-0">
@@ -172,18 +440,16 @@ function CompletionBubble({
               <polyline points="2,5 4,7 8,3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
-          <p className="text-sm font-medium text-foreground">
-            Architecture blueprint complete.
-          </p>
+          <p className="text-sm font-semibold text-foreground">Architecture blueprint ready</p>
         </div>
-        <p className="text-sm text-foreground/70 leading-relaxed">
-          {sectionCount > 0
-            ? `Generated ${sectionCount} section${sectionCount !== 1 ? "s" : ""} covering your full project architecture.`
-            : "The blueprint has been generated and is ready to view."}
-          {task.result?.model && (
-            <span className="text-muted-foreground/40"> via {task.result.model.split("/").pop()}</span>
-          )}
-        </p>
+        {sectionCount > 0 && (
+          <p className="text-xs text-muted-foreground/70 leading-relaxed">
+            Generated {sectionCount} section{sectionCount !== 1 ? "s" : ""} covering the full project architecture.
+            {task.result?.model && (
+              <span className="text-muted-foreground/40"> · via {task.result.model.split("/").pop()}</span>
+            )}
+          </p>
+        )}
         <div className="flex items-center gap-2 flex-wrap">
           <button
             onClick={onViewBlueprint}
@@ -195,14 +461,11 @@ function CompletionBubble({
             View Blueprint
           </button>
           <button
-            onClick={handleCopyAll}
+            onClick={handleCopy}
             className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
           >
-            <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.3">
-              <rect x="3.5" y="3.5" width="6.5" height="6.5" rx="1" />
-              <path d="M2.5 7.5H1.5a1 1 0 01-1-1V1.5a1 1 0 011-1h5a1 1 0 011 1v1" />
-            </svg>
-            Copy All
+            <CopyIconSm />
+            {copied ? "Copied!" : "Copy All"}
           </button>
         </div>
       </div>
@@ -210,7 +473,7 @@ function CompletionBubble({
   );
 }
 
-// ── History blueprint card (for past messages from DB) ────────────────────────
+// ── History blueprint card ─────────────────────────────────────────────────────
 
 function HistoryBlueprintCard({
   content,
@@ -235,7 +498,7 @@ function HistoryBlueprintCard({
   };
 
   return (
-    <AssistantBubble timestamp={timestamp}>
+    <AssistantBubble timestamp={timestamp} model={model} onCopy={handleCopy}>
       <div className="flex flex-col gap-3">
         <div className="flex items-center gap-2">
           <div className="flex h-5 w-5 items-center justify-center rounded-full bg-green-500/20 flex-shrink-0">
@@ -243,8 +506,7 @@ function HistoryBlueprintCard({
               <polyline points="2,5 4,7 8,3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </div>
-          <p className="text-sm font-medium text-foreground">Blueprint ready</p>
-          {model && <span className="text-[10px] text-muted-foreground/40">via {model.split("/").pop()}</span>}
+          <p className="text-sm font-semibold text-foreground">Blueprint ready</p>
         </div>
         {sectionCount > 0 && (
           <p className="text-xs text-muted-foreground/60">
@@ -265,7 +527,7 @@ function HistoryBlueprintCard({
             onClick={handleCopy}
             className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
           >
-            {copied ? <span className="text-green-400">Copied</span> : "Copy All"}
+            {copied ? <span className="text-green-400">Copied!</span> : "Copy All"}
           </button>
         </div>
       </div>
@@ -273,17 +535,9 @@ function HistoryBlueprintCard({
   );
 }
 
-// ── Inline blueprint drawer for history items ─────────────────────────────────
+// ── History blueprint viewer drawer ───────────────────────────────────────────
 
-function HistoryViewerDrawer({
-  content,
-  model,
-  onClose,
-}: {
-  content: string;
-  model?: string;
-  onClose: () => void;
-}) {
+function HistoryViewerDrawer({ content, model, onClose }: { content: string; model?: string; onClose: () => void }) {
   const fakeTask: ExecutionTask = {
     id: "history-view",
     conversationId: "",
@@ -299,33 +553,67 @@ function HistoryViewerDrawer({
   return <TaskDetailsDrawer task={fakeTask} onClose={onClose} />;
 }
 
-// ── Conversation message (casual AI reply) ────────────────────────────────────
+// ── Conversation bubble (plain AI response with markdown) ─────────────────────
 
-function ConversationBubble({ content, timestamp }: { content: string; timestamp?: string }) {
-  const [copied, setCopied] = useState(false);
+function ConversationBubble({ content, timestamp, model }: { content: string; timestamp?: string; model?: string }) {
   const handleCopy = () => {
-    navigator.clipboard.writeText(content).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
+    navigator.clipboard.writeText(content).then(() => toast.success("Copied to clipboard"));
   };
   return (
-    <AssistantBubble timestamp={timestamp}>
-      <div className="group relative">
-        <p className="text-sm text-foreground leading-relaxed whitespace-pre-wrap pr-6">{content}</p>
-        <button
-          onClick={handleCopy}
-          className="absolute right-0 top-0 rounded p-0.5 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
-        >
-          {copied ? (
-            <span className="text-[10px] text-green-400">Copied</span>
-          ) : (
-            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2">
-              <rect x="4" y="4" width="7" height="7" rx="1" />
-              <path d="M3 8H2a1 1 0 01-1-1V2a1 1 0 011-1h5a1 1 0 011 1v1" />
+    <AssistantBubble timestamp={timestamp} model={model} onCopy={handleCopy}>
+      <MarkdownRenderer content={content} />
+    </AssistantBubble>
+  );
+}
+
+// ── Error bubble ───────────────────────────────────────────────────────────────
+
+function ErrorBubble({
+  message,
+  retryable,
+  onRetryBuild,
+  onRetryVerification,
+}: {
+  message: string;
+  retryable?: boolean;
+  onRetryBuild?: () => void;
+  onRetryVerification?: () => void;
+}) {
+  return (
+    <AssistantBubble>
+      <div className="flex flex-col gap-3">
+        <div className="flex items-start gap-2">
+          <div className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-red-500/15">
+            <svg width="9" height="9" viewBox="0 0 9 9" fill="none" className="text-red-400">
+              <line x1="4.5" y1="1" x2="4.5" y2="5.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+              <circle cx="4.5" cy="7.5" r="0.6" fill="currentColor" />
             </svg>
-          )}
-        </button>
+          </div>
+          <p className="text-sm text-red-400 leading-relaxed">{message}</p>
+        </div>
+        {retryable && (onRetryBuild || onRetryVerification) && (
+          <div className="flex flex-wrap gap-2 pt-1 border-t border-border/30">
+            <p className="w-full text-[10px] text-muted-foreground/40">Retry without restarting:</p>
+            {onRetryBuild && (
+              <button
+                onClick={onRetryBuild}
+                className="flex items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted/20 transition-colors"
+              >
+                <RefreshIcon />
+                Retry Build
+              </button>
+            )}
+            {onRetryVerification && (
+              <button
+                onClick={onRetryVerification}
+                className="flex items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted/20 transition-colors"
+              >
+                <RefreshIcon />
+                Retry Verification
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </AssistantBubble>
   );
@@ -333,27 +621,34 @@ function ConversationBubble({ content, timestamp }: { content: string; timestamp
 
 // ── Empty state ────────────────────────────────────────────────────────────────
 
-function EmptyState() {
+const EXAMPLE_PROMPTS = [
+  "Build a SaaS project management app with teams and billing",
+  "Create a Telegram bot for crypto price alerts",
+  "Design a REST API for a marketplace with sellers and buyers",
+  "Build a real-time chat app with rooms and direct messages",
+];
+
+function EmptyState({ onPrompt }: { onPrompt: (p: string) => void }) {
   return (
     <div className="flex h-full flex-col items-center justify-center gap-5 p-8 text-center">
       <div className="relative">
         <AIPulse size={56} color="#6366f1" active />
       </div>
       <div className="max-w-sm">
-        <h2 className="text-base font-semibold text-foreground mb-2">Ready to plan</h2>
+        <h2 className="text-base font-semibold text-foreground mb-2">Start building</h2>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          Describe the software you want to build. The AI agent will analyze requirements,
-          generate a complete architecture blueprint, then automatically build and verify it.
+          Describe the software you want to build. The AI agent will generate a complete architecture blueprint, then build and verify it automatically.
         </p>
       </div>
-      <div className="flex flex-wrap items-center justify-center gap-2 mt-1">
-        {["SaaS application", "Telegram bot", "Mobile app", "API service"].map((example) => (
-          <span
-            key={example}
-            className="rounded-full border border-border bg-muted/30 px-3 py-1 text-xs text-muted-foreground"
+      <div className="flex flex-col gap-2 w-full max-w-xs mt-1">
+        {EXAMPLE_PROMPTS.map((p) => (
+          <button
+            key={p}
+            onClick={() => onPrompt(p)}
+            className="rounded-xl border border-border bg-card/50 px-4 py-2.5 text-xs text-left text-muted-foreground hover:text-foreground hover:border-primary/30 hover:bg-muted/30 transition-all"
           >
-            {example}
-          </span>
+            {p}
+          </button>
         ))}
       </div>
     </div>
@@ -365,12 +660,12 @@ function EmptyState() {
 type WorkspacePhase =
   | { kind: "idle" }
   | { kind: "streaming";      taskId: string; userMessage: string }
-  | { kind: "done_blueprint"; taskId: string; userMessage: string }
+  | { kind: "done_blueprint"; taskId: string; userMessage: string; elapsedMs?: number }
   | { kind: "executing";      taskId: string; userMessage: string; currentStageName?: string }
   | { kind: "verifying";      taskId: string; userMessage: string; currentStageName?: string }
   | { kind: "verified";       taskId: string; userMessage: string; allPassed: boolean; checks: VerificationCheck[]; healthReport?: HealthReport; previewUrl?: string; productionGate?: ProductionGate }
-  | { kind: "done_conversation"; content: string; userMessage: string }
-  | { kind: "error";          message: string; userMessage: string; retryable?: boolean; taskId?: string; blueprint?: string };
+  | { kind: "done_conversation"; content: string; userMessage: string; model?: string; elapsedMs?: number }
+  | { kind: "error"; message: string; userMessage: string; retryable?: boolean; taskId?: string; blueprint?: string };
 
 // ── Main PlannerWorkspace ──────────────────────────────────────────────────────
 
@@ -390,21 +685,43 @@ export function PlannerWorkspace({
   initialRepoId,
 }: PlannerWorkspaceProps) {
   const queryClient = useQueryClient();
+
+  // ── Input state ─────────────────────────────────────────────────────────────
   const [input, setInput] = useState("");
   const [phase, setPhase] = useState<WorkspacePhase>({ kind: "idle" });
   const [isStreaming, setIsStreaming] = useState(false);
-  const [selectedRepoId, setSelectedRepoId] = useState<string>(initialRepoId ?? "");
-  const [historyViewing, setHistoryViewing] = useState<{ content: string; model?: string } | null>(null);
 
+  // ── Streaming content (accumulates content_chunk events) ────────────────────
+  const [streamingContent, setStreamingContent] = useState("");
+  const [streamingStage, setStreamingStage] = useState<{ name: string; id: number } | null>(null);
+
+  // ── Repository selector ─────────────────────────────────────────────────────
+  const [selectedRepoId, setSelectedRepoId] = useState<string>(initialRepoId ?? "");
+
+  // ── Drawer / panels ─────────────────────────────────────────────────────────
+  const [historyViewing, setHistoryViewing] = useState<{ content: string; model?: string } | null>(null);
+  const [showFiles, setShowFiles] = useState(false);
+
+  // ── Live execution logs ─────────────────────────────────────────────────────
+  const [execLogs, setExecLogs] = useState<LogEntry[]>([]);
+  const [execActive, setExecActive] = useState(false);
+  const [execCurrentStage, setExecCurrentStage] = useState<string | undefined>();
+
+  // ── Timing ──────────────────────────────────────────────────────────────────
+  const plannerStartRef = useRef<number>(0);
+
+  // ── Refs ────────────────────────────────────────────────────────────────────
   const abortRef = useRef<AbortController | null>(null);
   const execAbortRef = useRef<AbortController | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const userScrolledRef = useRef(false);
   const wasFirstRef = useRef(isFirstMessage);
   const priorMessageCountRef = useRef(messages.length);
+  const blueprintRef = useRef<string>("");
 
   const renameMutation = useRenameConversation();
-  const blueprintRef = useRef<string>("");
 
   const { tasks } = useTaskStore();
   const {
@@ -420,14 +737,45 @@ export function PlannerWorkspace({
   });
   const repositories = reposData?.items ?? [];
 
-  // Scroll to bottom when content changes
-  useEffect(() => {
-    if (phase.kind !== "idle") {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [phase]);
+  // ── Auto-scroll ─────────────────────────────────────────────────────────────
 
-  // ── Execution pipeline (auto-triggered after blueprint done) ──────────────────
+  const scrollToBottom = useCallback((smooth = true) => {
+    if (!userScrolledRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "instant" });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (phase.kind !== "idle") scrollToBottom();
+  }, [phase, scrollToBottom]);
+
+  useEffect(() => {
+    if (streamingContent) scrollToBottom();
+  }, [streamingContent, scrollToBottom]);
+
+  const handleScroll = () => {
+    const el = scrollContainerRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    userScrolledRef.current = !atBottom;
+  };
+
+  // ── Textarea auto-resize ─────────────────────────────────────────────────────
+
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [input]);
+
+  // ── Add log helper ───────────────────────────────────────────────────────────
+
+  const addLog = useCallback((level: LogEntry["level"], message: string) => {
+    setExecLogs((prev) => [...prev, makeLog(level, message)]);
+  }, []);
+
+  // ── Execution pipeline ───────────────────────────────────────────────────────
 
   const runExecution = useCallback(async (taskId: string, blueprint: string, convId: string) => {
     execAbortRef.current?.abort();
@@ -435,6 +783,9 @@ export function PlannerWorkspace({
     execAbortRef.current = controller;
 
     startExecution(taskId, DEFAULT_EXEC_PHASES.map((p) => ({ ...p })));
+    setExecActive(true);
+    setExecLogs([]);
+    addLog("stage", "Execution pipeline started");
 
     setPhase((prev) =>
       prev.kind === "done_blueprint"
@@ -446,6 +797,8 @@ export function PlannerWorkspace({
       switch (event.type) {
         case "exec_stage_start":
           execPhaseStart(taskId, event.stage);
+          setExecCurrentStage(event.stageName);
+          addLog("stage", `Stage ${event.stage}: ${event.stageName}`);
           setPhase((prev) => {
             if (prev.kind === "executing" || prev.kind === "verifying") {
               return {
@@ -460,20 +813,17 @@ export function PlannerWorkspace({
 
         case "exec_stage_complete":
           execPhaseComplete(taskId, event.stage, event.duration ?? 0);
+          addLog("success", `Stage ${event.stage} completed in ${(event.duration / 1000).toFixed(1)}s`);
           break;
 
         case "exec_stage_fail":
           execPhaseFail(taskId, event.stage, event.error ?? "Stage failed");
+          addLog("error", `Stage ${event.stage} failed: ${event.error ?? "unknown"}`);
           break;
 
         case "verify_check": {
           const statusMap: Record<string, VerificationCheck["status"]> = {
-            checking: "checking",
-            pass: "pass",
-            fail: "fail",
-            skip: "skip",
-            fixing: "fixing",
-            fixed: "fixed",
+            checking: "checking", pass: "pass", fail: "fail", skip: "skip", fixing: "fixing", fixed: "fixed",
           };
           const st = statusMap[event.status ?? "checking"] ?? "checking";
           setVerifyCheck(taskId, {
@@ -483,6 +833,9 @@ export function PlannerWorkspace({
             status: st,
             detail: event.detail,
           });
+          if (event.status === "pass") addLog("success", `✓ ${event.checkName}`);
+          else if (event.status === "fail") addLog("error", `✕ ${event.checkName}: ${event.detail ?? ""}`);
+          else if (event.status === "checking") addLog("info", `Checking ${event.checkName}…`);
           setPhase((prev) =>
             prev.kind === "executing"
               ? { ...prev, kind: "verifying" } as WorkspacePhase
@@ -493,6 +846,7 @@ export function PlannerWorkspace({
 
         case "fix_attempt":
           setVerifyFixing(taskId, event.check ?? "", event.strategy ?? "");
+          addLog("warn", `Fixing ${event.check}: ${event.strategy}`);
           break;
 
         case "fix_result":
@@ -502,64 +856,45 @@ export function PlannerWorkspace({
             status: event.status === "fixed" ? "fixed" : event.status === "fixing" ? "fixing" : "fail",
             detail: event.strategy,
           });
+          if (event.status === "fixed") addLog("success", `Fixed: ${event.check}`);
           break;
 
         case "health_report":
-          if (event.healthReport) {
-            setHealthReport(taskId, event.healthReport);
-          }
+          if (event.healthReport) setHealthReport(taskId, event.healthReport);
+          addLog("info", `Health report: ${event.healthReport?.overallScore ?? 0}% overall`);
           break;
 
         case "production_gate":
-          // store gate result on task via setVerifyCheck side-effect — gate is
-          // persisted when exec_done fires; no action needed here
           break;
 
         case "exec_done": {
           const checks: VerificationCheck[] = (event.checks ?? []).map((c) => ({
-            id: c.id,
-            name: c.name,
-            domain: c.domain,
+            id: c.id, name: c.name, domain: c.domain,
             status: c.status === "pass" ? "pass" : c.status === "skip" ? "skip" : "fail",
-            detail: c.detail,
-            duration: c.duration,
+            detail: c.detail, duration: c.duration,
           }));
 
           const healthReport = event.healthReport ?? undefined;
           const previewUrl = event.previewUrl;
           const productionGate = event.productionGate;
 
-          setVerified(
-            taskId,
-            {
-              phases: DEFAULT_EXEC_PHASES.map((p) => ({ ...p, status: "complete" })),
-              checks,
-              healthReport,
-              allPassed: event.allPassed ?? false,
-              completedAt: new Date().toISOString(),
-            },
-            previewUrl,
-            productionGate,
-          );
+          setVerified(taskId, { phases: DEFAULT_EXEC_PHASES.map((p) => ({ ...p, status: "complete" })), checks, healthReport, allPassed: event.allPassed ?? false, completedAt: new Date().toISOString() }, previewUrl, productionGate);
+          setExecActive(false);
+          setExecCurrentStage(undefined);
+          addLog("success", event.allPassed ? "All checks passed — production ready!" : `Completed with ${checks.filter((c) => c.status === "fail").length} issue(s)`);
 
           setPhase((prev) => {
             const userMessage = (prev as { userMessage?: string }).userMessage ?? "";
-            return {
-              kind: "verified",
-              taskId,
-              userMessage,
-              allPassed: event.allPassed ?? false,
-              checks,
-              healthReport,
-              previewUrl,
-              productionGate,
-            };
+            return { kind: "verified", taskId, userMessage, allPassed: event.allPassed ?? false, checks, healthReport, previewUrl, productionGate };
           });
           break;
         }
 
         case "exec_error":
           setExecError(taskId, event.message ?? "Execution error");
+          setExecActive(false);
+          setExecCurrentStage(undefined);
+          addLog("error", event.message ?? "Execution failed");
           setPhase((prev) => ({
             kind: "error",
             message: event.message ?? "Execution failed",
@@ -578,42 +913,47 @@ export function PlannerWorkspace({
       if (controller.signal.aborted) return;
       const msg = err instanceof Error ? err.message : "Execution failed";
       setExecError(taskId, msg);
+      setExecActive(false);
+      addLog("error", `Execution error: ${msg}`);
       setPhase((prev) => ({
         kind: "error",
         message: msg,
         userMessage: (prev as { userMessage?: string }).userMessage ?? "",
+        retryable: true,
+        taskId,
+        blueprint: blueprintRef.current,
       }));
     }
-  }, [startExecution, execPhaseStart, execPhaseComplete, execPhaseFail,
-      setVerifyCheck, setVerifyFixing, setVerified, setHealthReport, setExecError]);
+  }, [startExecution, execPhaseStart, execPhaseComplete, execPhaseFail, setVerifyCheck, setVerifyFixing, setVerified, setHealthReport, setExecError, addLog]);
 
-  // ── Retry handler — re-runs execution without restarting conversation ─────────
+  // ── Retry handlers ───────────────────────────────────────────────────────────
 
   const handleRetryExecution = useCallback((taskId: string, blueprint: string) => {
     retryExecution(taskId);
-    setPhase((prev) => ({
-      kind: "executing",
-      taskId,
-      userMessage: (prev as { userMessage?: string }).userMessage ?? "",
-    }));
+    setPhase((prev) => ({ kind: "executing", taskId, userMessage: (prev as { userMessage?: string }).userMessage ?? "" }));
     void runExecution(taskId, blueprint, conversationId);
   }, [retryExecution, runExecution, conversationId]);
 
   const handleRetryVerification = useCallback((taskId: string, blueprint: string) => {
     retryExecution(taskId);
-    setPhase((prev) => ({
-      kind: "verifying",
-      taskId,
-      userMessage: (prev as { userMessage?: string }).userMessage ?? "",
-    }));
+    setPhase((prev) => ({ kind: "verifying", taskId, userMessage: (prev as { userMessage?: string }).userMessage ?? "" }));
     void runExecution(taskId, blueprint, conversationId);
   }, [retryExecution, runExecution, conversationId]);
 
-  const handleRetryPreview = useCallback(() => {
-    toast.info("Restarting preview server…");
+  // ── Stop generation ──────────────────────────────────────────────────────────
+
+  const handleStop = useCallback(() => {
+    abortRef.current?.abort();
+    execAbortRef.current?.abort();
+    setIsStreaming(false);
+    setExecActive(false);
+    setStreamingContent("");
+    setStreamingStage(null);
+    setPhase({ kind: "idle" });
+    toast.info("Generation stopped");
   }, []);
 
-  // ── Planning pipeline ──────────────────────────────────────────────────────────
+  // ── Planning pipeline ────────────────────────────────────────────────────────
 
   const handleSend = useCallback(async (overrideContent?: string) => {
     const content = overrideContent !== undefined ? overrideContent : input.trim();
@@ -621,8 +961,12 @@ export function PlannerWorkspace({
 
     setInput("");
     setIsStreaming(true);
+    setStreamingContent("");
+    setStreamingStage(null);
+    userScrolledRef.current = false;
     wasFirstRef.current = isFirstMessage;
     priorMessageCountRef.current = messages.length;
+    plannerStartRef.current = Date.now();
 
     abortRef.current?.abort();
     execAbortRef.current?.abort();
@@ -647,23 +991,31 @@ export function PlannerWorkspace({
 
     const handleEvent = (event: PlannerStreamEvent) => {
       switch (event.type) {
-        case "stage_start":
+        case "stage_start": {
           stageStart(taskId, event.stage);
+          const stageMeta = PLANNER_STAGES.find((s) => s.id === event.stage);
+          if (stageMeta) setStreamingStage({ name: stageMeta.name, id: event.stage });
           break;
-
+        }
         case "stage_complete":
           stageComplete(taskId, event.stage);
           break;
 
         case "content_chunk":
+          setStreamingContent((prev) => prev + event.text);
+          break;
+
         case "section_detected":
           break;
 
-        case "done":
+        case "done": {
           capturedBlueprint = event.content;
           blueprintRef.current = event.content;
+          const elapsedMs = Date.now() - plannerStartRef.current;
           completeTask(taskId, event.content, event.model);
-          setPhase({ kind: "done_blueprint", taskId, userMessage: content });
+          setStreamingContent("");
+          setStreamingStage(null);
+          setPhase({ kind: "done_blueprint", taskId, userMessage: content, elapsedMs });
           setIsStreaming(false);
 
           queryClient.invalidateQueries({ queryKey: getGetConversationQueryKey(conversationId) });
@@ -677,12 +1029,15 @@ export function PlannerWorkspace({
             );
           }
 
-          // ── Auto-trigger execution pipeline ──────────────────────────────────
           void runExecution(taskId, capturedBlueprint, conversationId);
           break;
+        }
 
-        case "conversation":
-          setPhase({ kind: "done_conversation", content: event.content, userMessage: content });
+        case "conversation": {
+          const elapsedMs = Date.now() - plannerStartRef.current;
+          setStreamingContent("");
+          setStreamingStage(null);
+          setPhase({ kind: "done_conversation", content: event.content, userMessage: content, elapsedMs });
           setIsStreaming(false);
           queryClient.invalidateQueries({ queryKey: getGetConversationQueryKey(conversationId) });
           queryClient.invalidateQueries({ queryKey: getListConversationsQueryKey() });
@@ -694,9 +1049,12 @@ export function PlannerWorkspace({
             );
           }
           break;
+        }
 
         case "error":
           failTask(taskId, event.message);
+          setStreamingContent("");
+          setStreamingStage(null);
           setPhase({ kind: "error", message: event.message, userMessage: content });
           setIsStreaming(false);
           break;
@@ -709,6 +1067,8 @@ export function PlannerWorkspace({
       if (controller.signal.aborted) return;
       const msg = err instanceof Error ? err.message : "Connection failed";
       failTask(taskId, msg);
+      setStreamingContent("");
+      setStreamingStage(null);
       setPhase({ kind: "error", message: msg, userMessage: content });
       toast.error(msg);
     } finally {
@@ -718,18 +1078,27 @@ export function PlannerWorkspace({
       createTask, stageStart, stageComplete, completeTask, failTask, selectedRepoId, runExecution]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void handleSend(); }
   };
 
-  // ── Render message history ──────────────────────────────────────────────────
+  // ── Render history messages ──────────────────────────────────────────────────
 
   const renderHistory = () => {
     const limit = phase.kind === "idle" ? messages.length : priorMessageCountRef.current;
     const visible = messages.slice(0, limit);
     if (visible.length === 0) return null;
-    return visible.map((msg) => {
+
+    return visible.map((msg, idx) => {
       if (msg.role === "user") {
-        return <UserBubble key={msg.id} content={msg.content} timestamp={msg.created_at} />;
+        const isLastUser = visible.slice(idx + 1).every((m) => m.role !== "user");
+        return (
+          <UserBubble
+            key={msg.id}
+            content={msg.content}
+            timestamp={msg.created_at}
+            onEdit={isLastUser && phase.kind === "idle" ? (newContent) => void handleSend(newContent) : undefined}
+          />
+        );
       }
       if (msg.role === "assistant") {
         const metadata = msg.metadata as { module?: string; model?: string } | null;
@@ -745,25 +1114,35 @@ export function PlannerWorkspace({
             />
           );
         }
-        return (
-          <ConversationBubble key={msg.id} content={msg.content} timestamp={msg.created_at} />
-        );
+        return <ConversationBubble key={msg.id} content={msg.content} timestamp={msg.created_at} model={model} />;
       }
       return null;
     });
   };
 
-  // ── Render current phase ────────────────────────────────────────────────────
+  // ── Render current phase ─────────────────────────────────────────────────────
 
   const renderPhase = () => {
     switch (phase.kind) {
-      case "streaming":
+      case "streaming": {
+        const currentStageName = streamingStage?.name;
+        const currentStageId = streamingStage?.id;
         return (
           <>
             <UserBubble content={phase.userMessage} />
-            <ThinkingBubble />
+            {streamingContent.length > 0 || streamingStage !== null ? (
+              <StreamingBubble
+                content={streamingContent}
+                stageName={currentStageName}
+                currentStage={currentStageId}
+                totalStages={PLANNER_STAGES.length}
+              />
+            ) : (
+              <ThinkingBubble stageName={currentStageName} />
+            )}
           </>
         );
+      }
 
       case "done_blueprint": {
         const task = tasks.find((t) => t.id === phase.taskId);
@@ -773,6 +1152,7 @@ export function PlannerWorkspace({
             <UserBubble content={phase.userMessage} />
             <CompletionBubble
               task={task}
+              elapsedMs={phase.elapsedMs}
               onViewBlueprint={() => {
                 if (task.result) setHistoryViewing({ content: task.result.content, model: task.result.model });
               }}
@@ -857,8 +1237,16 @@ export function PlannerWorkspace({
                     : () => toast.info("Preview URL not available yet")}
                   onRetryBuild={() => handleRetryExecution(phase.taskId, blueprint)}
                   onRetryVerification={() => handleRetryVerification(phase.taskId, blueprint)}
-                  onRetryPreview={handleRetryPreview}
+                  onRetryPreview={() => toast.info("Restarting preview server…")}
                 />
+                {/* View generated files button */}
+                <button
+                  onClick={() => setShowFiles(true)}
+                  className="mt-2 flex items-center gap-1.5 rounded-lg border border-border/60 px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground hover:border-primary/30 hover:bg-muted/20 transition-colors"
+                >
+                  <FilesIcon />
+                  View Generated Files
+                </button>
               </div>
             </div>
           </>
@@ -869,7 +1257,7 @@ export function PlannerWorkspace({
         return (
           <>
             <UserBubble content={phase.userMessage} />
-            <ConversationBubble content={phase.content} />
+            <ConversationBubble content={phase.content} model={phase.model} />
           </>
         );
 
@@ -877,39 +1265,12 @@ export function PlannerWorkspace({
         return (
           <>
             <UserBubble content={phase.userMessage} />
-            <AssistantBubble>
-              <div className="flex flex-col gap-3">
-                <div className="flex items-center gap-2">
-                  <div className="h-2 w-2 rounded-full bg-red-500 flex-shrink-0" />
-                  <p className="text-sm text-red-400">{phase.message}</p>
-                </div>
-                {phase.retryable && phase.taskId && (
-                  <div className="flex flex-wrap gap-2 pt-1 border-t border-border/30">
-                    <p className="w-full text-[10px] text-muted-foreground/40">
-                      Retry without restarting the conversation:
-                    </p>
-                    <button
-                      onClick={() => phase.taskId && phase.blueprint !== undefined && handleRetryExecution(phase.taskId, phase.blueprint || blueprintRef.current)}
-                      className="flex items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted/20 transition-colors"
-                    >
-                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-                        <path d="M1.5 5a3.5 3.5 0 105.5-2.9" /><path d="M6.5 1L7 3.1l-2.1.4" />
-                      </svg>
-                      Retry Build
-                    </button>
-                    <button
-                      onClick={() => phase.taskId && handleRetryVerification(phase.taskId, phase.blueprint || blueprintRef.current)}
-                      className="flex items-center gap-1.5 rounded-lg border border-border/60 px-2.5 py-1.5 text-[11px] font-medium text-muted-foreground/70 hover:text-foreground hover:bg-muted/20 transition-colors"
-                    >
-                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-                        <path d="M1.5 5a3.5 3.5 0 105.5-2.9" /><path d="M6.5 1L7 3.1l-2.1.4" />
-                      </svg>
-                      Retry Verification
-                    </button>
-                  </div>
-                )}
-              </div>
-            </AssistantBubble>
+            <ErrorBubble
+              message={phase.message}
+              retryable={phase.retryable}
+              onRetryBuild={phase.taskId ? () => handleRetryExecution(phase.taskId!, phase.blueprint || blueprintRef.current) : undefined}
+              onRetryVerification={phase.taskId ? () => handleRetryVerification(phase.taskId!, phase.blueprint || blueprintRef.current) : undefined}
+            />
           </>
         );
 
@@ -919,49 +1280,71 @@ export function PlannerWorkspace({
     }
   };
 
+  // ── Regenerate button (idle + has history) ───────────────────────────────────
+
+  const regenerateButton = useMemo(() => {
+    if (phase.kind !== "idle") return null;
+    const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    if (!lastUser) return null;
+    return (
+      <div className="flex justify-center pt-1">
+        <button
+          onClick={() => void handleSend(lastUser.content)}
+          disabled={isStreaming}
+          className="flex items-center gap-1.5 rounded-full border border-border bg-card/60 px-3 py-1.5 text-[11px] text-muted-foreground hover:text-foreground hover:border-primary/30 hover:bg-muted transition-all disabled:opacity-40"
+        >
+          <RefreshIcon />
+          Regenerate response
+        </button>
+      </div>
+    );
+  }, [phase.kind, messages, isStreaming, handleSend]);
+
+  // ── Input area busy state ────────────────────────────────────────────────────
+
+  const isBusy = isStreaming || phase.kind === "executing" || phase.kind === "verifying";
+  const inputPlaceholder = isBusy
+    ? "Working on it…"
+    : "Describe the software you want to build…";
+
+  // ── Render ───────────────────────────────────────────────────────────────────
+
   return (
     <div className="flex h-full flex-col min-w-0 overflow-hidden">
 
-      {/* ── Chat area ──────────────────────────────────────────────────────── */}
-      <div className="flex-1 overflow-y-auto">
+      {/* ── Messages ─────────────────────────────────────────────────────────── */}
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto"
+      >
         <div className="mx-auto max-w-2xl px-4 py-6 flex flex-col gap-4">
-
           {renderHistory()}
           {renderPhase()}
-
-          {/* Regenerate button — idle only */}
-          {phase.kind === "idle" && (() => {
-            const lastUser = [...messages].reverse().find((m) => m.role === "user");
-            if (!lastUser) return null;
-            return (
-              <div className="flex justify-center pt-1">
-                <button
-                  onClick={() => handleSend(lastUser.content)}
-                  disabled={isStreaming}
-                  className="flex items-center gap-1.5 rounded-full border border-border bg-card/60 px-3 py-1.5 text-[11px] text-muted-foreground hover:text-foreground hover:border-primary/30 hover:bg-muted transition-all disabled:opacity-40"
-                >
-                  <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-                    <path d="M9.5 2A5 5 0 1 0 9.8 6.5" />
-                    <polyline points="9.5,0 9.5,2.5 7,2.5" />
-                  </svg>
-                  Regenerate response
-                </button>
-              </div>
-            );
-          })()}
-
-          {messages.length === 0 && phase.kind === "idle" && <EmptyState />}
-
+          {regenerateButton}
+          {messages.length === 0 && phase.kind === "idle" && (
+            <EmptyState onPrompt={(p) => { setInput(p); textareaRef.current?.focus(); }} />
+          )}
           <div ref={messagesEndRef} />
         </div>
       </div>
 
-      {/* ── Input area ─────────────────────────────────────────────────────── */}
+      {/* ── Live log panel ───────────────────────────────────────────────────── */}
+      {(execActive || execLogs.length > 0) && (
+        <LiveLogPanel
+          logs={execLogs}
+          isActive={execActive}
+          currentStage={execCurrentStage}
+        />
+      )}
+
+      {/* ── Input area ───────────────────────────────────────────────────────── */}
       <div
         className="flex-shrink-0 border-t border-border bg-background/95 backdrop-blur-sm px-3 pt-3 pb-3 sm:px-4"
-        style={{ paddingBottom: "max(0.75rem, var(--safe-bottom))" }}
+        style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom, 0.75rem))" }}
       >
         <div className="mx-auto max-w-2xl">
+          {/* Repository selector */}
           {repositories.length > 0 && (
             <div className="mb-2 flex items-center gap-2">
               <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.4" className="text-muted-foreground flex-shrink-0">
@@ -971,7 +1354,7 @@ export function PlannerWorkspace({
               <select
                 value={selectedRepoId}
                 onChange={(e) => setSelectedRepoId(e.target.value)}
-                disabled={isStreaming}
+                disabled={isBusy}
                 className="flex-1 rounded-md border border-border bg-card px-2 py-1 text-[11px] text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary/30 disabled:opacity-50"
               >
                 <option value="">No repository context</option>
@@ -982,63 +1365,93 @@ export function PlannerWorkspace({
             </div>
           )}
 
+          {/* Input box */}
           <div className="relative flex items-end gap-2 rounded-2xl border border-border bg-card shadow-sm focus-within:border-primary/40 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
             <Textarea
               ref={textareaRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={
-                isStreaming
-                  ? "Working on it…"
-                  : phase.kind === "executing" || phase.kind === "verifying"
-                  ? "Building and verifying…"
-                  : "Describe the software you want to build…"
-              }
-              className="min-h-[44px] max-h-[160px] flex-1 resize-none border-0 bg-transparent p-3 text-sm shadow-none focus-visible:ring-0"
+              placeholder={inputPlaceholder}
+              className="min-h-[44px] max-h-[160px] flex-1 resize-none border-0 bg-transparent p-3 pr-1 text-sm shadow-none focus-visible:ring-0"
               rows={1}
-              disabled={isStreaming || phase.kind === "executing" || phase.kind === "verifying"}
+              disabled={isBusy}
             />
-            <Button
-              size="icon"
-              className="mb-2 mr-2 h-8 w-8 flex-shrink-0 rounded-xl"
-              onClick={() => handleSend()}
-              disabled={!input.trim() || isStreaming || phase.kind === "executing" || phase.kind === "verifying"}
-            >
-              {isStreaming || phase.kind === "executing" || phase.kind === "verifying" ? (
-                <AIPulse size={15} color="white" active />
-              ) : (
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12.5 1.5L6.5 7.5M12.5 1.5L8.5 12.5L6.5 7.5M12.5 1.5L1.5 5.5L6.5 7.5" />
-                </svg>
+
+            <div className="mb-2 mr-2 flex flex-shrink-0 items-center gap-1.5">
+              {/* Stop button — shown while busy */}
+              {isBusy && (
+                <button
+                  onClick={handleStop}
+                  className="flex h-8 w-8 items-center justify-center rounded-xl border border-border bg-muted text-foreground/70 hover:text-foreground hover:border-destructive/40 hover:bg-destructive/10 transition-colors"
+                  aria-label="Stop generation"
+                  title="Stop generation"
+                >
+                  <StopIcon />
+                </button>
               )}
-            </Button>
+
+              {/* Send button */}
+              <Button
+                size="icon"
+                className="h-8 w-8 flex-shrink-0 rounded-xl"
+                onClick={() => void handleSend()}
+                disabled={!input.trim() || isBusy}
+              >
+                {isBusy ? (
+                  <AIPulse size={15} color="white" active />
+                ) : (
+                  <SendIcon />
+                )}
+              </Button>
+            </div>
           </div>
 
+          {/* Status line */}
           <div className="mt-1.5 flex items-center justify-between px-1">
             <p className="text-[10px] text-muted-foreground/35 hidden sm:block">
               Enter to send · Shift+Enter for newline
             </p>
-            {(isStreaming || phase.kind === "executing" || phase.kind === "verifying") && (
-              <p className="text-[10px] text-primary/60 animate-pulse">
-                {phase.kind === "executing"
-                  ? "Building in background…"
-                  : phase.kind === "verifying"
-                  ? "Verifying…"
-                  : "Working in background…"}
-              </p>
-            )}
+            <div className="flex items-center gap-3">
+              {(execActive || (phase.kind === "executing" || phase.kind === "verifying")) && execLogs.length > 0 && (
+                <span className="text-[10px] text-violet-400/70 animate-pulse">
+                  {execCurrentStage ?? "Building…"}
+                </span>
+              )}
+              {isStreaming && (
+                <span className="text-[10px] text-primary/60 animate-pulse">
+                  {streamingStage?.name ?? "Planning…"}
+                </span>
+              )}
+            </div>
           </div>
         </div>
       </div>
 
-      {/* ── History Blueprint Viewer ────────────────────────────────────────── */}
+      {/* ── History blueprint viewer ──────────────────────────────────────────── */}
       {historyViewing && (
         <HistoryViewerDrawer
           content={historyViewing.content}
           model={historyViewing.model}
           onClose={() => setHistoryViewing(null)}
         />
+      )}
+
+      {/* ── Generated files panel ─────────────────────────────────────────────── */}
+      {showFiles && (
+        <>
+          <div
+            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px]"
+            onClick={() => setShowFiles(false)}
+            aria-hidden="true"
+          />
+          <div className="fixed inset-y-0 right-0 z-50 flex w-full max-w-xl flex-col border-l border-border bg-background shadow-2xl">
+            <GeneratedFilesPanel
+              conversationId={conversationId}
+              onClose={() => setShowFiles(false)}
+            />
+          </div>
+        </>
       )}
     </div>
   );
