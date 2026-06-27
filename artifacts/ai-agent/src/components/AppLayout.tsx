@@ -21,6 +21,7 @@ import {
   KeyRound,
   Layers,
   BrainCircuit,
+  Network,
 } from "lucide-react";
 
 // ── Breakpoint constant (matches Tailwind's lg: 1024px) ──────────────────────
@@ -83,6 +84,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     { href: "/ai-engine", label: "AI Engine", icon: BrainCircuit },
     { href: "/notifications", label: "Notifications", icon: Bell },
     { href: "/control-center", label: "AI Control", icon: Cpu },
+    { href: "/ai-providers", label: "AI Providers", icon: Network },
     { href: "/settings", label: "Settings", icon: Settings },
   ];
 

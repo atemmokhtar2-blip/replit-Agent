@@ -21,6 +21,7 @@ import githubRouter from "./modules/github";
 import repositoriesRouter from "./modules/repositories";
 import secretsCenterRouter from "./modules/secrets-center";
 import workspacesRouter from "./modules/workspaces";
+import aiProvidersRouter from "./modules/ai-providers";
 
 const router: IRouter = Router();
 
@@ -51,5 +52,6 @@ router.use("/v1/github", githubRouter);
 router.use("/v1/repositories", repositoriesRouter);
 router.use("/v1/secrets", secretsCenterRouter);
 router.use("/v1/workspaces", workspacesRouter);
+router.use("/v1/ai-providers", aiProvidersRouter);
 
 export default router;

@@ -16,11 +16,11 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { ExecutionSpec } from "@workspace/ai-orchestrator";
+import { providerManager } from "./provider-manager/index.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 export const PROJECT_DIR_BASE = process.env["PROJECT_FILES_BASE"] ?? "/tmp/projects";
-const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const PER_MODEL_TIMEOUT_MS  = 55_000;   // 55 s hard cap per single model call
 const WATCHDOG_INTERVAL_MS  = 30_000;   // alert after 30 s of silence
 const MAX_RETRIES_PER_BATCH = 4;        // max provider switches per batch
@@ -438,61 +438,24 @@ async function saveProgress(projectDir: string, p: BatchProgress): Promise<void>
     .catch(() => { /* non-fatal */ });
 }
 
-// ── Single provider call ──────────────────────────────────────────────────────
+// ── Single provider call — routes through the enterprise ProviderManager ───────
 
 interface LLMResult { content: string; model: string }
 
 async function callProvider(provider: ProviderConfig, system: string, user: string, maxTokens: number): Promise<LLMResult> {
-  const apiKey = process.env["OPENROUTER_API_KEY"];
-  if (!apiKey) throw new Error("OPENROUTER_API_KEY not set");
+  // The ProviderManager handles encryption, retry, failover, and health tracking.
+  // We pass the preferred model as a hint; it may fall back to another if needed.
+  const result = await providerManager.complete(
+    [{ role: "system", content: system }, { role: "user", content: user }],
+    { model: provider.model, maxTokens, temperature: 0.15, taskType: "code-gen" },
+  );
 
-  const controller = new AbortController();
-  const tid = setTimeout(() => controller.abort(new Error("ProviderTimeout")), PER_MODEL_TIMEOUT_MS);
-
-  try {
-    const resp = await fetch(OPENROUTER_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`,
-        "X-Title": "AI-Agent-File-Generator",
-      },
-      body: JSON.stringify({
-        model: provider.model,
-        messages: [{ role: "system", content: system }, { role: "user", content: user }],
-        max_tokens: maxTokens,
-        temperature: 0.15,
-        stream: false,
-      }),
-      signal: controller.signal,
-    });
-
-    clearTimeout(tid);
-
-    if (!resp.ok) {
-      const body = await resp.text().catch(() => "");
-      const pe = classifyError(null, resp.status);
-      throw Object.assign(
-        new Error(`HTTP ${resp.status}: ${body.slice(0, 100)}`),
-        { providerError: pe },
-      );
-    }
-
-    const data = await resp.json() as {
-      choices?: Array<{ message?: { content?: string } }>;
-    };
-    const content = data?.choices?.[0]?.message?.content ?? "";
-
-    if (content.length < 5) {
-      const pe: ProviderError = { kind: "incomplete_response", message: "Response too short", retryable: true, waitMs: 0 };
-      throw Object.assign(new Error("Incomplete response"), { providerError: pe });
-    }
-
-    return { content, model: provider.model };
-  } catch (err) {
-    clearTimeout(tid);
-    throw err;
+  if (!result.content || result.content.length < 5) {
+    const pe: ProviderError = { kind: "incomplete_response", message: "Response too short", retryable: true, waitMs: 0 };
+    throw Object.assign(new Error("Incomplete response"), { providerError: pe });
   }
+
+  return { content: result.content, model: result.model };
 }
 
 // ── BatchFileGenerator ────────────────────────────────────────────────────────
