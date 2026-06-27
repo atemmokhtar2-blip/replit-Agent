@@ -291,7 +291,7 @@ function AnalysisPanel({ repoId }: { repoId: string }) {
           { label: "Language", value: data.language },
           { label: "Framework", value: data.framework },
           { label: "Package Manager", value: data.packageManager },
-          { label: "Build Tool", value: data.buildTool },
+          { label: "Build System", value: data.buildSystem },
         ].map(({ label, value }) => (
           <div key={label} className="rounded-lg border border-border p-3">
             <p className="text-xs text-muted-foreground">{label}</p>
@@ -300,15 +300,15 @@ function AnalysisPanel({ repoId }: { repoId: string }) {
         ))}
       </div>
 
-      {data.detectedSecrets?.length > 0 && (
+      {(data.detectedSecrets ?? []).length > 0 && (
         <div>
           <p className="text-sm font-medium mb-2 flex items-center gap-1.5">
             <AlertCircle className="h-3.5 w-3.5 text-amber-500" />
-            Required Secrets ({data.detectedSecrets.length})
+            Required Secrets ({(data.detectedSecrets ?? []).length})
           </p>
           <div className="flex flex-wrap gap-1.5">
-            {data.detectedSecrets.map((s) => (
-              <Badge key={s.key} variant={s.required ? "destructive" : "secondary"} className="font-mono text-xs">
+            {(data.detectedSecrets ?? []).map((s) => (
+              <Badge key={s.key} variant={s.isRequired ? "destructive" : "secondary"} className="font-mono text-xs">
                 {s.key}
               </Badge>
             ))}
@@ -316,21 +316,27 @@ function AnalysisPanel({ repoId }: { repoId: string }) {
         </div>
       )}
 
-      {Object.keys(data.scripts ?? {}).length > 0 && (
-        <div>
-          <p className="text-sm font-medium mb-2 flex items-center gap-1.5">
-            <Code2 className="h-3.5 w-3.5" /> Scripts
-          </p>
-          <div className="rounded-md border border-border divide-y divide-border">
-            {Object.entries(data.scripts).map(([name, cmd]) => (
-              <div key={name} className="flex gap-3 px-3 py-2 text-xs">
-                <span className="font-mono font-medium text-primary w-20 flex-shrink-0">{name}</span>
-                <span className="text-muted-foreground font-mono truncate">{cmd}</span>
-              </div>
-            ))}
+      {(() => {
+        // scripts are stored inside fullContext.analysis.scripts
+        const scripts = (data.fullContext as { analysis?: { scripts?: Record<string, string> } } | null)?.analysis?.scripts ?? {};
+        const entries = Object.entries(scripts);
+        if (entries.length === 0) return null;
+        return (
+          <div>
+            <p className="text-sm font-medium mb-2 flex items-center gap-1.5">
+              <Code2 className="h-3.5 w-3.5" /> Scripts
+            </p>
+            <div className="rounded-md border border-border divide-y divide-border">
+              {entries.map(([name, cmd]) => (
+                <div key={name} className="flex gap-3 px-3 py-2 text-xs">
+                  <span className="font-mono font-medium text-primary w-20 flex-shrink-0">{name}</span>
+                  <span className="text-muted-foreground font-mono truncate">{cmd}</span>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

@@ -31,11 +31,13 @@ async function apiFetch<T>(
 
 export interface GitHubStatus {
   connected: boolean;
-  login?: string;
-  avatarUrl?: string;
-  name?: string;
+  status?: string;
+  github_login?: string;
+  github_name?: string;
+  github_avatar_url?: string;
   scopes?: string[];
-  connectedAt?: string;
+  last_verified_at?: string | null;
+  created_at?: string;
 }
 
 export interface GitHubRepo {
@@ -46,7 +48,7 @@ export interface GitHubRepo {
   private: boolean;
   language: string | null;
   stargazers_count: number;
-  updated_at: string;
+  updated_at: string | null;
   html_url: string;
   default_branch: string;
 }
@@ -69,18 +71,21 @@ export interface RepositoryImport {
 
 export interface RepoAnalysis {
   id: string;
-  repositoryId: string;
+  repositoryImportId: string;
   framework: string | null;
   language: string | null;
   packageManager: string | null;
-  buildTool: string | null;
-  testFramework: string | null;
-  detectedSecrets: Array<{ key: string; description?: string; required?: boolean }>;
-  dependencies: Record<string, string>;
-  devDependencies: Record<string, string>;
-  scripts: Record<string, string>;
-  context: string | null;
-  analyzedAt: string;
+  buildSystem: string | null;
+  hasDatabase: boolean;
+  hasDocker: boolean;
+  hasCI: boolean;
+  detectedSecrets: Array<{ key: string; description?: string; isRequired?: boolean; category?: string }> | null;
+  detectedEnvVars: Array<{ key: string; description?: string; category?: string; isRequired?: boolean }> | null;
+  dependencies: Record<string, string> | null;
+  devDependencies: Record<string, string> | null;
+  fullContext: Record<string, unknown> | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface RepoSecret {
@@ -115,20 +120,20 @@ export interface WorkspaceSession {
 export const githubApi = {
   status: () => apiFetch<GitHubStatus>("/github/status"),
   connect: (token: string) =>
-    apiFetch<{ message: string; login: string }>("/github/connect/pat", {
+    apiFetch<{ connected: boolean; github_login: string; github_name: string | null; github_avatar_url: string; scopes: string[] }>("/github/connect/pat", {
       method: "POST",
       body: JSON.stringify({ token }),
     }),
   disconnect: () =>
-    apiFetch<{ message: string }>("/github/disconnect", { method: "DELETE" }),
+    apiFetch<{ disconnected: boolean }>("/github/disconnect", { method: "DELETE" }),
   repos: (params?: { per_page?: number; page?: number }) => {
     const qs = new URLSearchParams();
     if (params?.per_page) qs.set("per_page", String(params.per_page));
     if (params?.page) qs.set("page", String(params.page));
-    return apiFetch<{ items: GitHubRepo[]; total: number }>(`/github/repos?${qs}`);
+    return apiFetch<{ items: GitHubRepo[]; page: number; per_page: number }>(`/github/repos?${qs}`);
   },
   searchRepos: (q: string) =>
-    apiFetch<{ items: GitHubRepo[]; total: number }>(`/github/repos/search?q=${encodeURIComponent(q)}`),
+    apiFetch<{ items: GitHubRepo[] }>(`/github/repos/search?q=${encodeURIComponent(q)}`),
 };
 
 // ─── Repositories ─────────────────────────────────────────────────────────────
@@ -143,7 +148,10 @@ export const repositoriesApi = {
   get: (id: string) => apiFetch<RepositoryImport>(`/repositories/${id}`),
   remove: (id: string) =>
     apiFetch<{ message: string }>(`/repositories/${id}`, { method: "DELETE" }),
-  analysis: (id: string) => apiFetch<RepoAnalysis>(`/repositories/${id}/analysis`),
+  analysis: async (id: string) => {
+    const resp = await apiFetch<{ analysis: RepoAnalysis }>(`/repositories/${id}/analysis`);
+    return resp.analysis;
+  },
   analyze: (id: string) =>
     apiFetch<{ message: string }>(`/repositories/${id}/analyze`, { method: "POST" }),
   branches: (id: string) => apiFetch<{ items: string[] }>(`/repositories/${id}/branches`),

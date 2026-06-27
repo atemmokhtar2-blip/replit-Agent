@@ -94,7 +94,7 @@ function GitHubTab() {
   const connectMutation = useMutation({
     mutationFn: (token: string) => githubApi.connect(token),
     onSuccess: (data) => {
-      toast.success(`Connected as @${data.login}`);
+      toast.success(`Connected as @${data.github_login}`);
       qc.invalidateQueries({ queryKey: ["github-status"] });
       setShowConnect(false);
       patForm.reset();
@@ -139,11 +139,11 @@ function GitHubTab() {
               <div className="flex items-center gap-3 p-3 rounded-lg bg-green-500/10 border border-green-500/30">
                 <CheckCircle2 className="h-5 w-5 text-green-500 flex-shrink-0" />
                 <div className="min-w-0">
-                  <p className="text-sm font-medium">Connected as <span className="text-green-600 dark:text-green-400">@{status.login}</span></p>
-                  {status.name && <p className="text-xs text-muted-foreground">{status.name}</p>}
-                  {status.connectedAt && (
+                  <p className="text-sm font-medium">Connected as <span className="text-green-600 dark:text-green-400">@{status.github_login}</span></p>
+                  {status.github_name && <p className="text-xs text-muted-foreground">{status.github_name}</p>}
+                  {status.created_at && (
                     <p className="text-xs text-muted-foreground">
-                      Since {new Date(status.connectedAt).toLocaleDateString()}
+                      Since {new Date(status.created_at).toLocaleDateString()}
                     </p>
                   )}
                 </div>

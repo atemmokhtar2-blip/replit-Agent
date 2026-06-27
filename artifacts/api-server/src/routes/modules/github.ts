@@ -13,7 +13,7 @@ import { Router } from "express";
 import { z } from "zod";
 import { db, githubConnectionsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-import { encrypt, decrypt, verifyToken, hasRequiredScopes, createClient, listRepositories, searchRepositories, parseGitHubUrl, getRepository } from "@workspace/github";
+import { encrypt, decrypt, verifyToken, hasRequiredScopes, createClient, listRepositories, searchRepositories, parseGitHubUrl, getRepository, type RepoInfo } from "@workspace/github";
 import { authenticate } from "../../middlewares/authenticate.js";
 import { validateBody } from "../../middlewares/validate.js";
 import { generateId } from "../../lib/auth.js";
@@ -104,12 +104,17 @@ router.post("/connect/pat", validateBody(connectPatSchema), async (req, res) => 
 
   logger.info({ userId, githubLogin: profile.login }, "GitHub account connected via PAT");
 
+  // parse scopes from comma-separated string to array for consistency with /status
+  const connScopesArray = profile.scopes
+    ? profile.scopes.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+
   res.json({
     connected: true,
     github_login: profile.login,
     github_name: profile.name,
     github_avatar_url: profile.avatarUrl,
-    scopes: profile.scopes,
+    scopes: connScopesArray,
   });
 });
 
@@ -140,13 +145,18 @@ router.get("/status", async (req, res) => {
     return;
   }
 
+  // scopes is stored as a comma-separated string; parse into array for the frontend
+  const scopesArray = conn.scopes
+    ? conn.scopes.split(",").map((s) => s.trim()).filter(Boolean)
+    : [];
+
   res.json({
     connected: conn.status === "connected",
     status: conn.status,
     github_login: conn.githubLogin,
     github_name: conn.githubName,
     github_avatar_url: conn.githubAvatarUrl,
-    scopes: conn.scopes,
+    scopes: scopesArray,
     last_verified_at: conn.lastVerifiedAt?.toISOString() ?? null,
     created_at: conn.createdAt.toISOString(),
   });
@@ -215,7 +225,7 @@ router.get("/repos", async (req, res) => {
   const octokit = createClient(conn.token);
   const repos = await listRepositories(octokit, { perPage: per_page, page, type });
 
-  res.json({ items: repos, page, per_page });
+  res.json({ items: repos.map(fmtGitHubRepo), page, per_page });
 });
 
 // ─── GET /repos/search ────────────────────────────────────────────────────────
@@ -233,7 +243,7 @@ router.get("/repos/search", async (req, res) => {
 
   const octokit = createClient(conn.token);
   const repos = await searchRepositories(octokit, q);
-  res.json({ items: repos });
+  res.json({ items: repos.map(fmtGitHubRepo) });
 });
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
@@ -259,6 +269,24 @@ async function getConnection(userId: string, res: import("express").Response): P
   }
 
   return { token, conn };
+}
+
+/**
+ * Convert a camelCase RepoInfo into the snake_case shape the frontend expects.
+ */
+function fmtGitHubRepo(r: RepoInfo) {
+  return {
+    id: r.id,
+    name: r.name,
+    full_name: r.fullName,
+    description: r.description,
+    private: r.isPrivate,
+    language: r.language,
+    stargazers_count: r.stargazersCount,
+    updated_at: r.updatedAt ?? null,
+    html_url: r.htmlUrl,
+    default_branch: r.defaultBranch,
+  };
 }
 
 export { getConnection };
