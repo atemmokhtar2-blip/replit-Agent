@@ -12,7 +12,11 @@ export type PlannerStreamEvent =
   | { type: "section_detected"; section: number; title: string }
   | { type: "done"; content: string; model: string; conversationId: string; messageId: string }
   | { type: "conversation"; content: string; conversationId: string; messageId: string }
-  | { type: "error"; message: string };
+  | { type: "error"; message: string }
+  | { type: "thinking_start"; model: string }
+  | { type: "thinking_chunk"; text: string }
+  | { type: "thinking_complete" }
+  | { type: "model_switch"; stage: number; toModel: string; taskType: string };
 
 export const PLANNER_STAGES = [
   { id: 1, name: "Understanding Request",      action: "Scanning" },
