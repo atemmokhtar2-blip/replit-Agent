@@ -22,7 +22,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { PlannerWorkspace } from "@/components/PlannerWorkspace";
+import { LiveWorkspace } from "@/components/workspace/LiveWorkspace";
 import { AIPulse } from "@/components/design-system/AIPulse";
 import { NeuralGrid } from "@/components/design-system/NeuralGrid";
 
@@ -667,7 +667,7 @@ export default function ChatWorkspace() {
           ) : convLoading ? (
             <div className="flex h-full items-center justify-center"><AIPulse size={32} color="#6366f1" active /></div>
           ) : (
-            <PlannerWorkspace
+            <LiveWorkspace
               key={selectedId}
               conversationId={selectedId}
               messages={messages}
