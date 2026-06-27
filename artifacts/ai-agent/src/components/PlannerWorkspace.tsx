@@ -294,113 +294,40 @@ function AssistantBubble({
   );
 }
 
-// ── Thinking indicator ─────────────────────────────────────────────────────────
+// ── Activity indicator — single pulsing line showing latest status ─────────────
 
-function ThinkingBubble({ stageName }: { stageName?: string }) {
-  return (
-    <AssistantBubble>
-      <div className="flex flex-col gap-2">
-        <p className="text-foreground/70 text-xs">
-          {stageName ?? "Analyzing your project…"}
-        </p>
-        <div className="flex items-center gap-[4px]">
-          {[0, 1, 2].map((i) => (
-            <span
-              key={i}
-              className="inline-block w-1.5 h-1.5 rounded-full bg-primary/50 animate-bounce"
-              style={{ animationDelay: `${i * 0.15}s`, animationDuration: "0.9s" }}
-            />
-          ))}
-        </div>
-      </div>
-    </AssistantBubble>
-  );
-}
-
-// ── Streaming content bubble ───────────────────────────────────────────────────
-
-function StreamingBubble({
-  content,
-  stageName,
-  currentStage,
-  totalStages,
+function ActivityBubble({
+  label,
+  sublabel,
+  color = "primary",
 }: {
-  content: string;
-  stageName?: string;
-  currentStage?: number;
-  totalStages?: number;
+  label: string;
+  sublabel?: string;
+  color?: "primary" | "violet";
 }) {
-  const progress = currentStage && totalStages
-    ? Math.round((currentStage / totalStages) * 100)
-    : null;
+  const dotColor = color === "violet" ? "bg-violet-500" : "bg-primary";
+  const textColor = color === "violet" ? "text-violet-300/80" : "text-primary/80";
 
   return (
-    <AssistantBubble>
-      {/* Stage progress bar */}
-      {stageName && (
-        <div className="mb-3 flex flex-col gap-1.5">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-medium text-primary/70">{stageName}</span>
-            {progress != null && (
-              <span className="text-[10px] text-muted-foreground/50 tabular-nums">{progress}%</span>
-            )}
-          </div>
-          <div className="h-0.5 rounded-full bg-border/50 overflow-hidden">
-            <div
-              className="h-full rounded-full bg-primary/60 transition-all duration-500"
-              style={{ width: `${progress ?? 30}%` }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Live content */}
-      {content ? (
-        <div className="min-w-0">
-          <MarkdownRenderer content={content} />
-          <span className="inline-block h-3.5 w-0.5 bg-primary/70 animate-pulse ml-0.5 align-middle" />
-        </div>
-      ) : (
-        <div className="flex items-center gap-[4px] py-1">
-          {[0, 1, 2].map((i) => (
-            <span
-              key={i}
-              className="inline-block w-1.5 h-1.5 rounded-full bg-primary/50 animate-bounce"
-              style={{ animationDelay: `${i * 0.15}s`, animationDuration: "0.9s" }}
-            />
-          ))}
-        </div>
-      )}
-    </AssistantBubble>
-  );
-}
-
-// ── Building bubble ────────────────────────────────────────────────────────────
-
-function BuildingBubble({ stageName }: { stageName?: string }) {
-  return (
-    <AssistantBubble>
-      <div className="flex flex-col gap-2">
-        <div className="flex items-center gap-2">
-          <div className="h-1.5 w-1.5 rounded-full bg-violet-500 animate-pulse flex-shrink-0" />
-          <p className="text-foreground/80 text-sm">
-            Blueprint ready — building and verifying your project…
-          </p>
-        </div>
-        {stageName && (
-          <p className="text-[11px] text-muted-foreground/50 font-mono pl-3.5">{stageName}</p>
-        )}
-        <div className="flex items-center gap-[4px] pl-3.5">
-          {[0, 1, 2].map((i) => (
-            <span
-              key={i}
-              className="inline-block w-1.5 h-1.5 rounded-full bg-violet-500/50 animate-bounce"
-              style={{ animationDelay: `${i * 0.15}s`, animationDuration: "0.9s" }}
-            />
-          ))}
-        </div>
+    <div className="flex gap-2.5 items-center">
+      {/* Small avatar dot instead of full bubble */}
+      <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-muted/30 border border-border/40 mt-0.5">
+        <span className={`h-2 w-2 rounded-full ${dotColor} animate-pulse`} />
       </div>
-    </AssistantBubble>
+      <div className="flex items-center gap-2 min-w-0">
+        {/* Arrow */}
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor"
+          strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
+          className={`flex-shrink-0 ${textColor}`}>
+          <path d="M1 5h8M6 2l3 3-3 3" />
+        </svg>
+        {/* Latest status — updates in place */}
+        <span className={`text-sm font-medium ${textColor} truncate`}>{label}</span>
+        {sublabel && (
+          <span className="text-[11px] text-muted-foreground/40 truncate hidden sm:inline">{sublabel}</span>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -1126,20 +1053,13 @@ export function PlannerWorkspace({
     switch (phase.kind) {
       case "streaming": {
         const currentStageName = streamingStage?.name;
-        const currentStageId = streamingStage?.id;
         return (
           <>
             <UserBubble content={phase.userMessage} />
-            {streamingContent.length > 0 || streamingStage !== null ? (
-              <StreamingBubble
-                content={streamingContent}
-                stageName={currentStageName}
-                currentStage={currentStageId}
-                totalStages={PLANNER_STAGES.length}
-              />
-            ) : (
-              <ThinkingBubble stageName={currentStageName} />
-            )}
+            <ActivityBubble
+              label={currentStageName ?? "Planning your architecture…"}
+              sublabel={`${streamingStage?.id ?? 0} / ${PLANNER_STAGES.length}`}
+            />
           </>
         );
       }
@@ -1174,16 +1094,16 @@ export function PlannerWorkspace({
                 }}
               />
             )}
-            <BuildingBubble stageName={phase.currentStageName} />
+            <ActivityBubble
+              label={phase.currentStageName ?? "Building your project…"}
+              color="violet"
+            />
           </>
         );
       }
 
       case "verifying": {
         const task = tasks.find((t) => t.id === phase.taskId);
-        const checks = task?.verificationChecks ?? [];
-        const phases = task?.execPhases ?? [];
-        const currentPhase = phases.find((p) => p.status === "running");
         return (
           <>
             <UserBubble content={phase.userMessage} />
@@ -1195,14 +1115,10 @@ export function PlannerWorkspace({
                 }}
               />
             )}
-            <div className="flex gap-2.5 items-start">
-              <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-muted/50 border border-border mt-0.5">
-                <AIPulse size={15} color="#6366f1" active />
-              </div>
-              <div className="flex-1 min-w-0">
-                <VerificationProgress checks={checks} phases={phases} currentPhase={currentPhase} />
-              </div>
-            </div>
+            <ActivityBubble
+              label={phase.currentStageName ?? "Verifying your project…"}
+              color="violet"
+            />
           </>
         );
       }
