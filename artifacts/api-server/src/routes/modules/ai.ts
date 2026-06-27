@@ -27,6 +27,8 @@ import { generateId } from "../../lib/auth.js";
 import { authenticate } from "../../middlewares/authenticate.js";
 import { validateBody } from "../../middlewares/validate.js";
 import { runExecutionPipeline, PROJECT_FILES_BASE } from "../../lib/execution-engine.js";
+import { buildContextPrompt } from "@workspace/repo-agent";
+import type { ProjectContext } from "@workspace/repo-agent";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -502,39 +504,60 @@ router.post("/planner/stream", validateBody(plannerSchema), async (req, res) => 
           .from(repoAnalysisResultsTable)
           .where(eq(repoAnalysisResultsTable.repositoryImportId, repository_id))
           .limit(1);
-        const lines: string[] = [`## Repository Context: ${repo.fullName}`];
-        if (analysis?.language) lines.push(`- Language: ${analysis.language}`);
-        if (analysis?.framework) lines.push(`- Framework: ${analysis.framework}`);
-        if (analysis?.packageManager) lines.push(`- Package Manager: ${analysis.packageManager}`);
-        if (analysis?.buildSystem) lines.push(`- Build System: ${analysis.buildSystem}`);
-        if (analysis?.hasDatabase) lines.push(`- Has Database: yes`);
-        if (analysis?.hasDocker) lines.push(`- Has Docker: yes`);
-        if (analysis?.hasCI) lines.push(`- Has CI: yes`);
 
-        // Detected components
-        const comps = analysis?.components as { name?: string }[] | null;
-        if (Array.isArray(comps) && comps.length > 0) {
-          const names = comps.slice(0, 8).map((c) => c.name).filter(Boolean);
-          if (names.length > 0) lines.push(`- Key Components: ${names.join(", ")}`);
+        const contextLines: string[] = [
+          `# Imported Repository: ${repo.fullName}`,
+          `> URL: ${repo.htmlUrl}`,
+          `> Branch: ${repo.defaultBranch}`,
+          repo.description ? `> Description: ${repo.description}` : "",
+          "",
+        ].filter(Boolean);
+
+        if (analysis?.fullContext) {
+          // Use the rich AI-optimised context prompt generated at import time.
+          // buildContextPrompt produces structured markdown covering architecture,
+          // scripts, components, routes, recent commits, and README summary.
+          try {
+            const prompt = buildContextPrompt(analysis.fullContext as unknown as ProjectContext);
+            contextLines.push(prompt);
+          } catch {
+            // Fallback: emit individual fields if the full context can't be decoded
+            if (analysis.language)      contextLines.push(`**Language:** ${analysis.language}`);
+            if (analysis.framework)     contextLines.push(`**Framework:** ${analysis.framework}`);
+            if (analysis.packageManager) contextLines.push(`**Package Manager:** ${analysis.packageManager}`);
+            if (analysis.buildSystem)   contextLines.push(`**Build System:** ${analysis.buildSystem}`);
+          }
+        } else if (analysis) {
+          // Analysis present but fullContext missing — emit flat fields
+          if (analysis.language)       contextLines.push(`**Language:** ${analysis.language}`);
+          if (analysis.framework)      contextLines.push(`**Framework:** ${analysis.framework}`);
+          if (analysis.packageManager) contextLines.push(`**Package Manager:** ${analysis.packageManager}`);
+          if (analysis.buildSystem)    contextLines.push(`**Build System:** ${analysis.buildSystem}`);
+          const flags = [
+            analysis.hasDatabase && "Database",
+            analysis.hasDocker   && "Docker",
+            analysis.hasCI       && "CI/CD",
+          ].filter(Boolean);
+          if (flags.length) contextLines.push(`**Features:** ${flags.join(", ")}`);
+
+          const deps = analysis.dependencies as Record<string, string> | null;
+          if (deps && typeof deps === "object") {
+            const names = Object.keys(deps).slice(0, 15);
+            if (names.length) contextLines.push(`**Dependencies:** ${names.join(", ")}`);
+          }
         }
 
-        // Detected routes
-        const routeList = analysis?.routes as { path?: string; method?: string }[] | null;
-        if (Array.isArray(routeList) && routeList.length > 0) {
-          const paths = routeList.slice(0, 8)
-            .map((r) => (r.method ? `${r.method} ${r.path}` : r.path))
-            .filter(Boolean);
-          if (paths.length > 0) lines.push(`- API Routes: ${paths.join(", ")}`);
+        // Append detected required secrets/env-vars so the AI knows what to ask for
+        const secrets = analysis?.detectedSecrets as Array<{ key: string; isRequired?: boolean }> | null;
+        if (Array.isArray(secrets) && secrets.length > 0) {
+          const required = secrets.filter((s) => s.isRequired !== false).map((s) => s.key);
+          if (required.length > 0) {
+            contextLines.push("", `**Required Environment Variables:** ${required.join(", ")}`);
+          }
         }
 
-        // Detected dependencies (top-level package names)
-        const deps = analysis?.dependencies as Record<string, string> | null;
-        if (deps && typeof deps === "object") {
-          const names = Object.keys(deps).slice(0, 12);
-          if (names.length > 0) lines.push(`- Dependencies: ${names.join(", ")}`);
-        }
-
-        effectiveMessage = `${lines.join("\n")}\n\n---\n\n${message}`;
+        contextLines.push("", "---", "");
+        effectiveMessage = `${contextLines.join("\n")}\n${message}`;
       }
     }
 

@@ -7,6 +7,7 @@
  */
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { useSearch } from "wouter";
+import { repositoriesApi } from "@/lib/repo-api";
 import {
   useListConversations,
   useCreateConversation,
@@ -250,8 +251,18 @@ function NoConversationState({ onCreate, isCreating }: { onCreate: () => void; i
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
-const AUTO_START_MESSAGE =
-  "This repository has just been imported. Analyze its structure, understand the tech stack, install all required dependencies, and run the project. Fix any errors that prevent it from starting.";
+function buildAutoStartMessage(repoFullName: string): string {
+  return (
+    `I've just imported the **${repoFullName}** repository from GitHub.\n\n` +
+    `Please analyze it thoroughly:\n` +
+    `1. Understand the full project structure and architecture\n` +
+    `2. Explain the tech stack, framework, and key libraries\n` +
+    `3. Show me how to install dependencies and run the project\n` +
+    `4. List any required environment variables or secrets\n` +
+    `5. Highlight anything important a new developer should know\n\n` +
+    `Use the repository context provided to give me a complete picture.`
+  );
+}
 
 export default function ChatWorkspace() {
   const queryClient = useQueryClient();
@@ -270,6 +281,10 @@ export default function ChatWorkspace() {
   // only pass autoStartMessage to that exact conversation and never to later ones.
   const [autoStartConvId, setAutoStartConvId] = useState<string | null>(null);
   const autoStartInitiatedRef = useRef(false);
+  // Dynamic autostart message — null = still polling / not ready yet
+  const [dynamicAutoStartMessage, setDynamicAutoStartMessage] = useState<string | null>(null);
+  // True while the repo is still cloning/analyzing
+  const [isWaitingForRepo, setIsWaitingForRepo] = useState(false);
   const mountedRef = useRef(true);
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -338,12 +353,62 @@ export default function ChatWorkspace() {
           queryClient.invalidateQueries({ queryKey: getListConversationsQueryKey() });
           setSelectedId(conv.id);
           setIsFirstMessage(true);
-          // Tie autostart message to this specific conversation only
           setAutoStartConvId(conv.id);
-          // Clean the autostart param from the URL so a refresh doesn't re-trigger
           const cleanUrl = window.location.pathname + `?repo=${initialRepoId ?? ""}`;
           window.history.replaceState(null, "", cleanUrl);
           if (window.innerWidth < 768) setSidebarOpen(false);
+
+          // ── Poll repo status until ready, then fire rich autostart message ──
+          if (!initialRepoId) {
+            setDynamicAutoStartMessage(
+              "A new conversation has been created. How can I help you today?"
+            );
+            return;
+          }
+
+          setIsWaitingForRepo(true);
+          const MAX_POLLS = 60;   // 60 × 3 s = 3 minutes
+          let polls = 0;
+
+          const poll = async () => {
+            if (!mountedRef.current) return;
+            polls++;
+            try {
+              const repo = await repositoriesApi.get(initialRepoId);
+
+              if (repo.status === "ready") {
+                setIsWaitingForRepo(false);
+                setDynamicAutoStartMessage(buildAutoStartMessage(repo.full_name));
+                return;
+              }
+
+              if (repo.status === "error") {
+                setIsWaitingForRepo(false);
+                const errMsg = repo.error_message
+                  ? `The repository import encountered an error: "${repo.error_message}". Please help me understand what went wrong and how I can fix it.`
+                  : `The repository import failed for an unknown reason. What could have caused this and how can I retry?`;
+                setDynamicAutoStartMessage(errMsg);
+                return;
+              }
+
+              // Still cloning/analyzing — try again in 3 s
+              if (polls < MAX_POLLS) {
+                setTimeout(() => { void poll(); }, 3000);
+              } else {
+                // Timeout: fall back to generic message
+                setIsWaitingForRepo(false);
+                setDynamicAutoStartMessage(buildAutoStartMessage(repo.full_name));
+              }
+            } catch {
+              // Network/server error — fall back to generic message
+              setIsWaitingForRepo(false);
+              setDynamicAutoStartMessage(
+                "A repository has just been imported. Analyze its structure and help me understand the project."
+              );
+            }
+          };
+
+          void poll();
         },
         onError: () => {
           if (!mountedRef.current) return;
@@ -609,7 +674,8 @@ export default function ChatWorkspace() {
               isFirstMessage={isFirstMessage}
               onSuccess={handleWorkspaceSuccess}
               initialRepoId={initialRepoId}
-              autoStartMessage={selectedId === autoStartConvId ? AUTO_START_MESSAGE : undefined}
+              autoStartMessage={selectedId === autoStartConvId ? dynamicAutoStartMessage ?? undefined : undefined}
+              isWaitingForRepo={selectedId === autoStartConvId ? isWaitingForRepo : false}
             />
           )}
         </div>

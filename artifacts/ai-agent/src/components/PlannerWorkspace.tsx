@@ -63,6 +63,89 @@ function countBlueprintSections(content: string): number {
   return (content.match(/^##\s+\d+\./gm) ?? []).length;
 }
 
+function parseBlueprintSections(content: string): Array<{ idx: number; title: string; body: string }> {
+  const sections: Array<{ idx: number; title: string; body: string }> = [];
+  const headerRe = /^##\s+(\d+)\.\s+(.+)$/gm;
+  let lastMatch: RegExpExecArray | null = null;
+  let lastEnd = 0;
+  let match: RegExpExecArray | null;
+  while ((match = headerRe.exec(content)) !== null) {
+    if (lastMatch) {
+      sections.push({
+        idx: Number(lastMatch[1]),
+        title: lastMatch[2]!.trim(),
+        body: content.slice(lastEnd, match.index).trim(),
+      });
+    }
+    lastMatch = match;
+    lastEnd = match.index + match[0].length;
+  }
+  if (lastMatch) {
+    sections.push({
+      idx: Number(lastMatch[1]),
+      title: lastMatch[2]!.trim(),
+      body: content.slice(lastEnd).trim(),
+    });
+  }
+  return sections;
+}
+
+function BlueprintAccordion({ content, onViewAll }: { content: string; onViewAll: () => void }) {
+  const sections = parseBlueprintSections(content);
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+
+  const toggle = (idx: number) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(idx)) next.delete(idx); else next.add(idx);
+      return next;
+    });
+
+  if (sections.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-1">
+      {sections.map((s) => {
+        const open = expanded.has(s.idx);
+        return (
+          <div key={s.idx} className="rounded-lg border border-border/40 overflow-hidden">
+            <button
+              onClick={() => toggle(s.idx)}
+              className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-muted/30 transition-colors group"
+            >
+              <span className="text-[10px] text-primary/50 font-mono w-4 flex-shrink-0 text-right">{s.idx}</span>
+              <span className="text-xs font-medium text-foreground flex-1 truncate group-hover:text-foreground/90">
+                {s.title}
+              </span>
+              <svg
+                width="11" height="11" viewBox="0 0 11 11" fill="none"
+                stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"
+                className={`flex-shrink-0 text-muted-foreground/50 transition-transform duration-150 ${open ? "rotate-180" : ""}`}
+              >
+                <polyline points="1,3.5 5.5,8 10,3.5" />
+              </svg>
+            </button>
+            {open && s.body && (
+              <div className="px-3 pb-3 pt-2 border-t border-border/30 text-xs text-muted-foreground/80 whitespace-pre-wrap leading-relaxed max-h-64 overflow-y-auto">
+                {s.body}
+              </div>
+            )}
+          </div>
+        );
+      })}
+      <button
+        onClick={onViewAll}
+        className="mt-1 flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/15 transition-colors self-start"
+      >
+        <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
+          <path d="M1 5.5h9M6.5 2l3.5 3.5L6.5 9" />
+        </svg>
+        Open Full Blueprint
+      </button>
+    </div>
+  );
+}
+
 function isBlueprint(content: string, module?: string): boolean {
   return module === "planner" || /^##\s+1\./m.test(content);
 }
@@ -502,29 +585,17 @@ function HistoryBlueprintCard({
             </svg>
           </div>
           <p className="text-sm font-semibold text-foreground">Blueprint ready</p>
-        </div>
-        {sectionCount > 0 && (
-          <p className="text-xs text-muted-foreground/60">
-            {sectionCount} sections · Architecture blueprint
-          </p>
-        )}
-        <div className="flex items-center gap-2">
-          <button
-            onClick={onViewDetails}
-            className="flex items-center gap-1.5 rounded-lg border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/15 transition-colors"
-          >
-            <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round">
-              <path d="M1 5.5h9M6.5 2l3.5 3.5L6.5 9" />
-            </svg>
-            View Details
-          </button>
+          {sectionCount > 0 && (
+            <span className="text-xs text-muted-foreground/50 ml-1">· {sectionCount} sections</span>
+          )}
           <button
             onClick={handleCopy}
-            className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            className="ml-auto flex items-center gap-1 rounded border border-border/50 px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
           >
-            {copied ? <span className="text-green-400">Copied!</span> : "Copy All"}
+            {copied ? <span className="text-green-400">Copied!</span> : "Copy"}
           </button>
         </div>
+        <BlueprintAccordion content={content} onViewAll={onViewDetails} />
       </div>
     </AssistantBubble>
   );
@@ -674,6 +745,8 @@ interface PlannerWorkspaceProps {
   initialRepoId?: string;
   /** When set, the workspace fires this message automatically on first mount (used after repo import). */
   autoStartMessage?: string;
+  /** True while the repo is still cloning/analyzing — shows a waiting state instead of empty state. */
+  isWaitingForRepo?: boolean;
 }
 
 export function PlannerWorkspace({
@@ -683,6 +756,7 @@ export function PlannerWorkspace({
   onSuccess,
   initialRepoId,
   autoStartMessage,
+  isWaitingForRepo,
 }: PlannerWorkspaceProps) {
   const queryClient = useQueryClient();
 
@@ -1403,7 +1477,23 @@ export function PlannerWorkspace({
           {renderPhase()}
           {regenerateButton}
           {messages.length === 0 && phase.kind === "idle" && (
-            <EmptyState onPrompt={(p) => { setInput(p); textareaRef.current?.focus(); }} />
+            isWaitingForRepo ? (
+              <div className="flex flex-col items-center justify-center gap-4 py-16 px-4 text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 border border-primary/20">
+                  <svg className="text-primary animate-spin" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+                  </svg>
+                </div>
+                <div className="max-w-sm">
+                  <h2 className="text-base font-semibold text-foreground mb-1.5">Analyzing repository…</h2>
+                  <p className="text-sm text-muted-foreground/70 leading-relaxed">
+                    Cloning and understanding the project structure. This usually takes 30–60 seconds.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <EmptyState onPrompt={(p) => { setInput(p); textareaRef.current?.focus(); }} />
+            )
           )}
           <div ref={messagesEndRef} />
         </div>

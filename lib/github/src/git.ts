@@ -57,9 +57,16 @@ export async function cloneRepository(options: CloneOptions): Promise<SimpleGit>
 
   // Skip LFS smudge/checkout via env vars — avoids simple-git's unsafe-operations
   // block that rejects --config filter.lfs.smudge= flags.
-  const lfsEnv = {
+  // Also clear GIT_ASKPASS and GIT_TERMINAL_PROMPT: Replit injects GIT_ASKPASS
+  // into the process environment, which simple-git's block-unsafe-operations plugin
+  // rejects when it sees that variable set without allowUnsafeAskPass enabled.
+  // Setting these to "" removes the problematic values from git's environment.
+  const lfsEnv: NodeJS.ProcessEnv = {
     ...process.env,
     GIT_LFS_SKIP_SMUDGE: "1",
+    GIT_ASKPASS: "",
+    GIT_TERMINAL_PROMPT: "0",
+    GIT_SSH_COMMAND: "ssh -o StrictHostKeyChecking=no -o BatchMode=yes",
   };
 
   const args: string[] = [`--depth=${depth}`];
