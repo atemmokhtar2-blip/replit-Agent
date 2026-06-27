@@ -5,12 +5,12 @@
  * - Stage timeline
  * - Blueprint sections (if any)
  * - Parsed file list
- * - Preview button
+ * - Live Preview (HTML/CSS/JS rendered in sandboxed iframe)
  *
  * Opens when user clicks a TaskCard.
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { ExecutionTimeline } from "./ExecutionTimeline";
 import { ExecutionStatusBadge } from "./ExecutionStatusBadge";
 import type { ExecutionTask } from "@/lib/task-store";
@@ -82,7 +82,6 @@ function extractFiles(content: string): ParsedFile[] {
     while ((m = re.exec(content)) !== null) {
       const path = m[1]!.replace(/^`|`$/g, "");
       if (!SKIP_PATHS.has(path) && path.includes("/") && !found.has(path)) {
-        // Get surrounding line for description
         const lineStart = content.lastIndexOf("\n", m.index) + 1;
         const lineEnd = content.indexOf("\n", m.index);
         const line = content.slice(lineStart, lineEnd === -1 ? undefined : lineEnd).trim();
@@ -103,6 +102,189 @@ function fileIcon(path: string): string {
     rs: "🦀", env: "🔧", sh: "💻", yml: "⚙️", yaml: "⚙️",
   };
   return iconMap[ext] ?? "📄";
+}
+
+// ── Code block extraction ─────────────────────────────────────────────────────
+
+interface ExtractedCode {
+  html: string;
+  css: string;
+  js: string;
+  hasContent: boolean;
+}
+
+function extractCodeBlocks(content: string): ExtractedCode {
+  const htmlBlocks: string[] = [];
+  const cssBlocks: string[] = [];
+  const jsBlocks: string[] = [];
+
+  const fenceRe = /```(\w+)?\n([\s\S]*?)```/g;
+  let m: RegExpExecArray | null;
+
+  while ((m = fenceRe.exec(content)) !== null) {
+    const lang = (m[1] ?? "").toLowerCase().trim();
+    const code = m[2] ?? "";
+
+    if (lang === "html" || lang === "htm") {
+      htmlBlocks.push(code.trim());
+    } else if (lang === "css" || lang === "scss") {
+      cssBlocks.push(code.trim());
+    } else if (lang === "js" || lang === "javascript" || lang === "ts" || lang === "typescript") {
+      jsBlocks.push(code.trim());
+    }
+  }
+
+  return {
+    html: htmlBlocks.join("\n\n"),
+    css: cssBlocks.join("\n\n"),
+    js: jsBlocks.join("\n\n"),
+    hasContent: htmlBlocks.length > 0 || cssBlocks.length > 0 || jsBlocks.length > 0,
+  };
+}
+
+function buildPreviewDocument(code: ExtractedCode): string {
+  const bodyContent = code.html || `
+    <div style="font-family:system-ui,sans-serif;color:#888;text-align:center;margin-top:80px;">
+      <p style="font-size:14px;">No HTML template found in blueprint.<br/>CSS and JS blocks are injected below.</p>
+    </div>`;
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{font-family:system-ui,-apple-system,sans-serif;background:#fff;color:#111;}
+${code.css}
+</style>
+</head>
+<body>
+${bodyContent}
+${code.js ? `<script>\ntry{\n${code.js}\n}catch(e){console.error('[Preview error]',e);}\n</script>` : ""}
+</body>
+</html>`;
+}
+
+// ── Live Preview pane ─────────────────────────────────────────────────────────
+
+function LivePreviewPane({ content }: { content: string }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [mode, setMode] = useState<"preview" | "source">("preview");
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const code = extractCodeBlocks(content);
+  const doc = buildPreviewDocument(code);
+
+  const handleRefresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+
+  const handleOpenExternal = useCallback(() => {
+    const blob = new Blob([doc], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const win = window.open(url, "_blank");
+    setTimeout(() => { if (win) URL.revokeObjectURL(url); }, 5000);
+  }, [doc]);
+
+  if (!code.hasContent) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full py-16 text-center px-6">
+        <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-border bg-muted/20">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.3" className="text-muted-foreground/40">
+            <rect x="2" y="3" width="20" height="14" rx="2" />
+            <path d="M8 21h8M12 17v4" />
+            <path d="M9 9l2 2-2 2M13 13h2" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </div>
+        <p className="text-sm font-medium text-foreground/50">No previewable code found</p>
+        <p className="mt-1.5 text-[11px] text-muted-foreground/40 leading-relaxed max-w-xs">
+          The blueprint doesn't contain HTML, CSS, or JS code blocks yet. Preview becomes available once the AI generates frontend code.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Preview toolbar */}
+      <div className="flex flex-shrink-0 items-center gap-2 border-b border-border/50 px-3 py-2 bg-card/30">
+        {/* mode toggle */}
+        <div className="flex rounded-md border border-border overflow-hidden text-[10px]">
+          <button
+            onClick={() => setMode("preview")}
+            className={`px-2.5 py-1 font-medium transition-colors ${mode === "preview" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/30"}`}
+          >
+            Preview
+          </button>
+          <button
+            onClick={() => setMode("source")}
+            className={`px-2.5 py-1 font-medium transition-colors ${mode === "source" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-muted/30"}`}
+          >
+            Source
+          </button>
+        </div>
+
+        {/* badges */}
+        <div className="flex items-center gap-1 flex-1 flex-wrap">
+          {code.html && (
+            <span className="rounded px-1.5 py-0.5 text-[9px] font-bold bg-orange-500/15 text-orange-400 uppercase tracking-wide">HTML</span>
+          )}
+          {code.css && (
+            <span className="rounded px-1.5 py-0.5 text-[9px] font-bold bg-pink-500/15 text-pink-400 uppercase tracking-wide">CSS</span>
+          )}
+          {code.js && (
+            <span className="rounded px-1.5 py-0.5 text-[9px] font-bold bg-yellow-500/15 text-yellow-400 uppercase tracking-wide">JS</span>
+          )}
+        </div>
+
+        {/* actions */}
+        <button
+          onClick={handleRefresh}
+          title="Refresh preview"
+          className="flex items-center justify-center h-6 w-6 rounded text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 transition-colors"
+        >
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <path d="M9.5 2A5 5 0 1 0 9.8 6.5" />
+            <polyline points="9.5,0 9.5,2.5 7,2.5" />
+          </svg>
+        </button>
+        <button
+          onClick={handleOpenExternal}
+          title="Open in new tab"
+          className="flex items-center justify-center h-6 w-6 rounded text-muted-foreground/50 hover:text-foreground hover:bg-muted/30 transition-colors"
+        >
+          <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M5 2H2a1 1 0 00-1 1v6a1 1 0 001 1h6a1 1 0 001-1V6" />
+            <path d="M7 1h3v3" />
+            <line x1="10" y1="1" x2="5" y2="6" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Preview iframe */}
+      {mode === "preview" && (
+        <div className="flex-1 bg-white relative overflow-hidden">
+          <iframe
+            key={refreshKey}
+            ref={iframeRef}
+            srcDoc={doc}
+            sandbox="allow-scripts allow-same-origin"
+            title="Live Preview"
+            className="w-full h-full border-0"
+            style={{ minHeight: 0 }}
+          />
+        </div>
+      )}
+
+      {/* Source view */}
+      {mode === "source" && (
+        <div className="flex-1 overflow-y-auto bg-[#0d0d0d]">
+          <pre className="text-[10.5px] font-mono text-green-300/80 leading-relaxed p-4 whitespace-pre-wrap break-all">
+            {doc}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
 }
 
 // ── Section card ───────────────────────────────────────────────────────────────
@@ -161,10 +343,8 @@ interface TaskDetailsDrawerProps {
 }
 
 export function TaskDetailsDrawer({ task, onClose }: TaskDetailsDrawerProps) {
-  const [activeTab, setActiveTab] = useState<"timeline" | "blueprint" | "files">("timeline");
-  const [previewOpen, setPreviewOpen] = useState(false);
+  const [activeTab, setActiveTab] = useState<"timeline" | "blueprint" | "files" | "preview">("timeline");
 
-  // Trap Escape
   useEffect(() => {
     const handler = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
     window.addEventListener("keydown", handler);
@@ -176,12 +356,20 @@ export function TaskDetailsDrawer({ task, onClose }: TaskDetailsDrawerProps) {
   const sections = task.result ? parseBlueprint(task.result.content) : [];
   const files = task.result ? extractFiles(task.result.content) : [];
   const hasResult = !!task.result;
+  const codeBlocks = task.result ? extractCodeBlocks(task.result.content) : { hasContent: false, html: "", css: "", js: "" };
 
   function formatElapsed(start: string, end?: string): string {
     const ms = (end ? new Date(end).getTime() : Date.now()) - new Date(start).getTime();
     if (ms < 60000) return `${Math.round(ms / 1000)}s`;
     return `${Math.floor(ms / 60000)}m ${Math.round((ms % 60000) / 1000)}s`;
   }
+
+  const tabs = [
+    { id: "timeline" as const, label: "Timeline", disabled: false },
+    { id: "blueprint" as const, label: sections.length > 0 ? `Blueprint (${sections.length})` : "Blueprint", disabled: !hasResult },
+    { id: "files" as const, label: files.length > 0 ? `Files (${files.length})` : "Files", disabled: !hasResult },
+    { id: "preview" as const, label: "Live Preview", disabled: !hasResult, highlight: codeBlocks.hasContent },
+  ];
 
   return (
     <>
@@ -226,33 +414,34 @@ export function TaskDetailsDrawer({ task, onClose }: TaskDetailsDrawerProps) {
 
         {/* Tabs */}
         <div className="flex flex-shrink-0 border-b border-border bg-card/30 px-4">
-          {(["timeline", "blueprint", "files"] as const).map((tab) => {
-            const labels = { timeline: "Timeline", blueprint: `Blueprint${sections.length > 0 ? ` (${sections.length})` : ""}`, files: `Files${files.length > 0 ? ` (${files.length})` : ""}` };
-            const disabled = (tab === "blueprint" || tab === "files") && !hasResult;
-            return (
-              <button
-                key={tab}
-                onClick={() => !disabled && setActiveTab(tab)}
-                disabled={disabled}
-                className={`relative px-3 py-2.5 text-xs font-medium transition-colors ${
-                  activeTab === tab
-                    ? "text-foreground"
-                    : disabled
-                    ? "text-muted-foreground/30 cursor-default"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {labels[tab]}
-                {activeTab === tab && (
-                  <span className="absolute inset-x-0 bottom-0 h-0.5 bg-primary rounded-t" />
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => !tab.disabled && setActiveTab(tab.id)}
+              disabled={tab.disabled}
+              className={`relative px-3 py-2.5 text-xs font-medium transition-colors ${
+                activeTab === tab.id
+                  ? "text-foreground"
+                  : tab.disabled
+                  ? "text-muted-foreground/30 cursor-default"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <span className="flex items-center gap-1.5">
+                {tab.label}
+                {tab.highlight && (
+                  <span className="inline-flex h-1.5 w-1.5 rounded-full bg-green-400 animate-pulse" />
                 )}
-              </button>
-            );
-          })}
+              </span>
+              {activeTab === tab.id && (
+                <span className="absolute inset-x-0 bottom-0 h-0.5 bg-primary rounded-t" />
+              )}
+            </button>
+          ))}
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className={`flex-1 min-h-0 ${activeTab === "preview" ? "flex flex-col overflow-hidden" : "overflow-y-auto p-4"}`}>
 
           {/* Timeline tab */}
           {activeTab === "timeline" && (
@@ -332,10 +521,15 @@ export function TaskDetailsDrawer({ task, onClose }: TaskDetailsDrawerProps) {
               )}
             </div>
           )}
+
+          {/* Live Preview tab */}
+          {activeTab === "preview" && hasResult && (
+            <LivePreviewPane content={task.result!.content} />
+          )}
         </div>
 
         {/* Footer actions */}
-        {task.status === "ready" && task.result && (
+        {task.status === "ready" && task.result && activeTab !== "preview" && (
           <div className="flex-shrink-0 border-t border-border bg-card/30 p-3 flex items-center gap-2">
             <button
               onClick={() => {
@@ -351,6 +545,15 @@ export function TaskDetailsDrawer({ task, onClose }: TaskDetailsDrawerProps) {
               </svg>
               Copy Blueprint
             </button>
+            {codeBlocks.hasContent && (
+              <button
+                onClick={() => setActiveTab("preview")}
+                className="flex items-center gap-1.5 rounded-md border border-green-500/30 bg-green-500/10 px-3 py-1.5 text-xs text-green-400 hover:bg-green-500/20 transition-colors"
+              >
+                <span className="inline-flex h-1.5 w-1.5 rounded-full bg-green-400" />
+                Live Preview
+              </button>
+            )}
             <div className="flex-1" />
             <span className="text-[10px] text-muted-foreground/40">
               {new Date(task.completedAt ?? task.startedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
