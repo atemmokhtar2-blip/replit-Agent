@@ -57,13 +57,27 @@ export interface LLMMessage {
   content: string;
 }
 
+export interface RotationEvent {
+  type: "key_try" | "key_success" | "key_fail" | "key_switch" | "provider_switch";
+  provider: string;
+  providerDisplay: string;
+  keyName?: string;
+  keyIndex?: number;
+  totalKeys?: number;
+  model?: string;
+  reason?: string;
+  nextProvider?: string;
+  nextProviderDisplay?: string;
+}
+
 export interface LLMOptions {
-  model?:       string;
-  maxTokens?:   number;
-  temperature?: number;
-  taskType?:    TaskType;
-  stream?:      boolean;
-  signal?:      AbortSignal;
+  model?:             string;
+  maxTokens?:         number;
+  temperature?:       number;
+  taskType?:          TaskType;
+  stream?:            boolean;
+  signal?:            AbortSignal;
+  onRotationEvent?:   (event: RotationEvent) => void;
 }
 
 export interface LLMResponse {

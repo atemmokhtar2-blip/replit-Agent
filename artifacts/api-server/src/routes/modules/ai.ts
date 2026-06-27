@@ -587,6 +587,9 @@ router.post("/planner/stream", validateBody(plannerSchema), async (req, res) => 
           taskType: opts.taskType as TaskType | undefined,
           maxTokens: opts.maxTokens,
           temperature: opts.temperature,
+          onRotationEvent: (evt) => {
+            if (!aborted) sendEvent({ type: "provider_status", ...evt });
+          },
         }),
     );
 

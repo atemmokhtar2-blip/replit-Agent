@@ -12,6 +12,7 @@ export type {
   LLMMessage,
   LLMOptions,
   LLMResponse,
+  RotationEvent,
   TaskType,
   RoutingStrategy,
   ProviderError,

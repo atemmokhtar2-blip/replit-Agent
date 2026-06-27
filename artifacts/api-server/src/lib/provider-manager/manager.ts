@@ -224,20 +224,22 @@ export class ProviderManager {
   async complete(messages: LLMMessage[], options: LLMOptions = {}): Promise<LLMResponse> {
     if (!this.initialized) await this.initialize();
 
-    const taskType  = options.taskType ?? "general";
-    const providers = this.orderedProviders();
+    const taskType        = options.taskType ?? "general";
+    const providers       = this.orderedProviders();
+    const emit            = options.onRotationEvent;
 
     // Token optimization: truncate message history to stay within provider limits.
-    // Each provider has a different context window; we truncate conservatively so
-    // the output budget (maxTokens) always fits inside the context window.
     const optimized = truncateMessages(messages, options.maxTokens ?? 8_000);
 
     let totalRetries = 0;
     const triedKeys  = new Set<string>();
 
-    for (const provider of providers) {
-      const adapter = ALL_ADAPTERS.find(a => a.slug === provider.slug);
+    for (let pi = 0; pi < providers.length; pi++) {
+      const provider = providers[pi]!;
+      const adapter  = ALL_ADAPTERS.find(a => a.slug === provider.slug);
       if (!adapter) continue;
+
+      const activeKeys = provider.keys.filter(k => k.enabled);
 
       let attempts = 0;
       while (attempts < MAX_RETRIES) {
@@ -258,6 +260,17 @@ export class ProviderManager {
 
         const model = options.model ?? adapter.defaultModels[taskType];
 
+        // Emit: trying this key
+        emit?.({
+          type: "key_try",
+          provider: provider.slug,
+          providerDisplay: provider.displayName,
+          keyName: key.name,
+          keyIndex: activeKeys.indexOf(key) + 1,
+          totalKeys: activeKeys.length,
+          model,
+        });
+
         try {
           const result = await adapter.complete(optimized, { ...options, model }, plainKey);
           const latencyMs = Date.now() - t0;
@@ -272,6 +285,17 @@ export class ProviderManager {
           // Update provider stats
           provider.successCount++;
           provider.avgLatencyMs = ema(provider.avgLatencyMs, latencyMs);
+
+          // Emit: success
+          emit?.({
+            type: "key_success",
+            provider: provider.slug,
+            providerDisplay: provider.displayName,
+            keyName: key.name,
+            keyIndex: activeKeys.indexOf(key) + 1,
+            totalKeys: activeKeys.length,
+            model,
+          });
 
           // Log to DB (non-blocking)
           void this.logRequest({
@@ -314,6 +338,18 @@ export class ProviderManager {
             `(attempt ${attempts + 1}/${MAX_RETRIES})`,
           );
 
+          // Emit: key failed
+          emit?.({
+            type: "key_fail",
+            provider: provider.slug,
+            providerDisplay: provider.displayName,
+            keyName: key.name,
+            keyIndex: activeKeys.indexOf(key) + 1,
+            totalKeys: activeKeys.length,
+            model,
+            reason: pe.kind,
+          });
+
           // Log failure (non-blocking)
           void this.logRequest({
             providerSlug: provider.slug, keyId: key.id, model,
@@ -327,6 +363,17 @@ export class ProviderManager {
             key.status  = "error";
             key.enabled = false;
             void this.flushStats(provider, key);
+            // Emit: switching to next key
+            const nextKey = provider.keys.find(k => k.enabled && !triedKeys.has(k.id));
+            if (nextKey) {
+              emit?.({
+                type: "key_switch",
+                provider: provider.slug,
+                providerDisplay: provider.displayName,
+                keyName: nextKey.name,
+                reason: pe.kind,
+              });
+            }
             break;
           }
 
@@ -334,6 +381,18 @@ export class ProviderManager {
           if (pe.kind === "insufficient_credits" && pe.suggestNextProvider) {
             key.status = "exhausted";
             void this.flushStats(provider, key);
+            // Emit: switching to next provider
+            const nextProvider = providers[pi + 1];
+            if (nextProvider) {
+              emit?.({
+                type: "provider_switch",
+                provider: nextProvider.slug,
+                providerDisplay: nextProvider.displayName,
+                reason: "credits_exhausted",
+                nextProvider: nextProvider.slug,
+                nextProviderDisplay: nextProvider.displayName,
+              });
+            }
             break;
           }
 
@@ -354,6 +413,19 @@ export class ProviderManager {
           attempts++;
           void this.flushStats(provider, key);
         }
+      }
+
+      // If moving to next provider, emit provider_switch event
+      const nextProvider = providers[pi + 1];
+      if (nextProvider && pi < providers.length - 1) {
+        emit?.({
+          type: "provider_switch",
+          provider: nextProvider.slug,
+          providerDisplay: nextProvider.displayName,
+          reason: "all_keys_failed",
+          nextProvider: nextProvider.slug,
+          nextProviderDisplay: nextProvider.displayName,
+        });
       }
     }
 

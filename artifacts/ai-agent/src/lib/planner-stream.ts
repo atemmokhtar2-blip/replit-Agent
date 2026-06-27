@@ -16,7 +16,8 @@ export type PlannerStreamEvent =
   | { type: "thinking_start"; model: string }
   | { type: "thinking_chunk"; text: string }
   | { type: "thinking_complete" }
-  | { type: "model_switch"; stage: number; toModel: string; taskType: string };
+  | { type: "model_switch"; stage: number; toModel: string; taskType: string }
+  | { type: "provider_status"; event: "key_try" | "key_success" | "key_fail" | "key_switch" | "provider_switch"; provider: string; providerDisplay: string; keyName?: string; keyIndex?: number; totalKeys?: number; model?: string; reason?: string; nextProvider?: string; nextProviderDisplay?: string };
 
 export const PLANNER_STAGES = [
   { id: 1, name: "Understanding Request",      action: "Scanning" },

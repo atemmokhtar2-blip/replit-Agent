@@ -7,7 +7,6 @@ import { AuthProvider, useAuth } from "@/components/AuthProvider";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AppLayout } from "@/components/AppLayout";
 import { TaskProvider } from "@/lib/task-store";
-import { TaskExecutionPanel } from "@/components/execution/TaskExecutionPanel";
 import { Loader2 } from "lucide-react";
 import { useEffect } from "react";
 
@@ -227,7 +226,6 @@ function App() {
               <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
                 <Router />
                 <Toaster />
-                <TaskExecutionPanel />
               </WouterRouter>
             </TooltipProvider>
           </TaskProvider>

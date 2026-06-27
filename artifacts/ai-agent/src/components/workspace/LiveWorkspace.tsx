@@ -374,6 +374,16 @@ export function LiveWorkspace({
   const [activeCardId, setActiveCardId] = useState<string | null>(null);
   const [verifyCardId, setVerifyCardId] = useState<string | null>(null);
   const verifyCardIdRef = useRef<string | null>(null);
+  const [providerStatus, setProviderStatus] = useState<{
+    provider: string;
+    providerDisplay: string;
+    keyName?: string;
+    keyIndex?: number;
+    totalKeys?: number;
+    model?: string;
+  } | null>(null);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const elapsedIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Refs
   const abortRef = useRef<AbortController | null>(null);
@@ -387,6 +397,25 @@ export function LiveWorkspace({
   const blueprintRef = useRef("");
   const taskIdRef = useRef("");
   const handleSendRef = useRef<(override?: string) => void>(() => {});
+
+  // ── Elapsed timer ─────────────────────────────────────────────────────────────
+  const startElapsedTimer = useCallback(() => {
+    setElapsedMs(0);
+    if (elapsedIntervalRef.current) clearInterval(elapsedIntervalRef.current);
+    const t0 = Date.now();
+    elapsedIntervalRef.current = setInterval(() => {
+      setElapsedMs(Date.now() - t0);
+    }, 500);
+  }, []);
+
+  const stopElapsedTimer = useCallback(() => {
+    if (elapsedIntervalRef.current) {
+      clearInterval(elapsedIntervalRef.current);
+      elapsedIntervalRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => () => { if (elapsedIntervalRef.current) clearInterval(elapsedIntervalRef.current); }, []);
 
   // ── Auto-scroll ───────────────────────────────────────────────────────────────
   const scrollToBottom = useCallback((force = false) => {
@@ -684,13 +713,15 @@ export function LiveWorkspace({
     wasFirstRef.current = isFirstMessage;
     plannerStartRef.current = Date.now();
 
-    // Reset card state for new session
+    // Reset runtime state for new session
     setCards([]);
     verifyCardIdRef.current = null;
     setVerifyCardId(null);
     setPreviewUrl(null);
     setShowPreview(false);
     blueprintRef.current = "";
+    setProviderStatus(null);
+    startElapsedTimer();
 
     abortRef.current?.abort();
     execAbortRef.current?.abort();
@@ -834,6 +865,7 @@ export function LiveWorkspace({
 
           completeTask(taskId, event.content, event.model);
           setIsStreaming(false);
+          stopElapsedTimer();
 
           queryClient.invalidateQueries({ queryKey: getGetConversationQueryKey(conversationId) });
           queryClient.invalidateQueries({ queryKey: getListConversationsQueryKey() });
@@ -866,6 +898,7 @@ export function LiveWorkspace({
             expanded: true,
           });
           setIsStreaming(false);
+          stopElapsedTimer();
           queryClient.invalidateQueries({ queryKey: getGetConversationQueryKey(conversationId) });
           queryClient.invalidateQueries({ queryKey: getListConversationsQueryKey() });
           onSuccess(conversationId);
@@ -893,8 +926,37 @@ export function LiveWorkspace({
           });
           failTask(taskId, event.message);
           setIsStreaming(false);
+          stopElapsedTimer();
           break;
         }
+
+        case "provider_status": {
+          const ev = event.event;
+          setProviderStatus({
+            provider: event.provider,
+            providerDisplay: event.providerDisplay,
+            keyName: event.keyName,
+            keyIndex: event.keyIndex,
+            totalKeys: event.totalKeys,
+            model: event.model,
+          });
+          // Surface key rotation / provider switch events as log lines in the active card
+          if (activeStageCard) {
+            let logMsg: string | null = null;
+            if (ev === "provider_switch") {
+              logMsg = `Switching to ${event.providerDisplay}…`;
+            } else if (ev === "key_switch") {
+              logMsg = `Rotating to next key (${event.keyName ?? ""})…`;
+            } else if (ev === "key_fail") {
+              logMsg = `Key failed [${event.reason ?? "error"}] — trying next…`;
+            }
+            if (logMsg) appendLog(activeStageCard, logMsg);
+          }
+          break;
+        }
+
+        default:
+          break;
       }
     };
 
@@ -918,14 +980,17 @@ export function LiveWorkspace({
       failTask(taskId, msg);
       toast.error(msg);
     } finally {
-      if (!controller.signal.aborted) setIsStreaming(false);
+      if (!controller.signal.aborted) {
+        setIsStreaming(false);
+        stopElapsedTimer();
+      }
     }
   }, [
     input, isStreaming, conversationId, isFirstMessage, selectedRepoId,
     queryClient, renameMutation, onSuccess,
     addCard, updateCard, appendLog, appendContent, addFilesFromContent,
     createTask, stageStart, stageComplete, completeTask, failTask,
-    runExecution,
+    runExecution, startElapsedTimer, stopElapsedTimer,
   ]);
 
   // Keep ref current
@@ -951,6 +1016,8 @@ export function LiveWorkspace({
     execAbortRef.current?.abort();
     setIsStreaming(false);
     setExecActive(false);
+    stopElapsedTimer();
+    setProviderStatus(null);
     toast.info("Stopped");
   };
 
@@ -1013,22 +1080,50 @@ export function LiveWorkspace({
             </svg>
           </button>
 
-          {/* Status */}
+          {/* Status — compact execution header */}
           <div className="flex-1 min-w-0">
-            {isBusy && runningCard && (
-              <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                className="flex items-center gap-1.5"
-              >
+            <AnimatePresence mode="wait">
+              {isBusy ? (
                 <motion.div
-                  className="h-1.5 w-1.5 rounded-full bg-primary"
-                  animate={{ opacity: [1, 0.3, 1] }}
-                  transition={{ duration: 1, repeat: Infinity }}
-                />
-                <span className="text-[11px] text-primary/70 truncate">{runningCard.title}</span>
-              </motion.div>
-            )}
+                  key="running"
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 4 }}
+                  transition={{ duration: 0.15 }}
+                  className="flex items-center gap-2 min-w-0"
+                >
+                  <motion.div
+                    className="h-1.5 w-1.5 rounded-full bg-primary flex-shrink-0"
+                    animate={{ opacity: [1, 0.3, 1] }}
+                    transition={{ duration: 1, repeat: Infinity }}
+                  />
+                  {providerStatus ? (
+                    <div className="flex items-center gap-1.5 min-w-0 overflow-hidden">
+                      <span className="text-[11px] font-medium text-primary/80 flex-shrink-0">
+                        {providerStatus.providerDisplay}
+                      </span>
+                      {providerStatus.model && (
+                        <span className="text-[10px] text-muted-foreground/50 truncate hidden sm:inline">
+                          · {providerStatus.model.split("/").pop()}
+                        </span>
+                      )}
+                      {providerStatus.totalKeys && providerStatus.totalKeys > 1 && (
+                        <span className="text-[9px] text-muted-foreground/35 flex-shrink-0 hidden md:inline">
+                          key {providerStatus.keyIndex}/{providerStatus.totalKeys}
+                        </span>
+                      )}
+                    </div>
+                  ) : runningCard ? (
+                    <span className="text-[11px] text-primary/70 truncate">{runningCard.title}</span>
+                  ) : null}
+                  {elapsedMs > 1000 && (
+                    <span className="text-[9px] text-muted-foreground/30 flex-shrink-0 tabular-nums hidden sm:inline">
+                      {(elapsedMs / 1000).toFixed(0)}s
+                    </span>
+                  )}
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
           </div>
 
           {/* Card count */}
@@ -1166,22 +1261,6 @@ export function LiveWorkspace({
               </div>
             </div>
 
-            {/* Live activity status */}
-            <AnimatePresence>
-              {isBusy && runningCard && (
-                <motion.div
-                  initial={{ opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
-                  transition={{ duration: 0.2 }}
-                >
-                  <LiveStatusBar
-                    label={runningCard.title}
-                    sublabel={runningCard.subtitle}
-                  />
-                </motion.div>
-              )}
-            </AnimatePresence>
           </div>
         </div>
       </div>
