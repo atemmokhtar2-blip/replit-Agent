@@ -250,10 +250,14 @@ function NoConversationState({ onCreate, isCreating }: { onCreate: () => void; i
 
 // ── Main component ─────────────────────────────────────────────────────────────
 
+const AUTO_START_MESSAGE =
+  "This repository has just been imported. Analyze its structure, understand the tech stack, install all required dependencies, and run the project. Fix any errors that prevent it from starting.";
+
 export default function ChatWorkspace() {
   const queryClient = useQueryClient();
   const urlSearch = useSearch();
   const initialRepoId = useMemo(() => new URLSearchParams(urlSearch).get("repo") ?? undefined, [urlSearch]);
+  const autoStart = useMemo(() => new URLSearchParams(urlSearch).get("autostart") === "1", [urlSearch]);
   const [selectedId, setSelectedId] = useState<string | null>(() => loadLastConvId());
   const [isFirstMessage, setIsFirstMessage] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(() =>
@@ -262,7 +266,18 @@ export default function ChatWorkspace() {
   const [search, setSearch] = useState("");
   const [pinned, setPinned] = useState<Set<string>>(() => loadPinned());
   const [autoRestored, setAutoRestored] = useState(false);
+  // Track which conversationId was auto-created by the import autostart so we
+  // only pass autoStartMessage to that exact conversation and never to later ones.
+  const [autoStartConvId, setAutoStartConvId] = useState<string | null>(null);
+  const autoStartInitiatedRef = useRef(false);
+  const mountedRef = useRef(true);
   const searchRef = useRef<HTMLInputElement>(null);
+
+  // Cleanup flag so mutation callbacks don't update state after unmount.
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
 
   const { data: convList, isLoading: listLoading } = useListConversations();
   const { data: activeConv, isLoading: convLoading } = useGetConversation(selectedId!, {
@@ -276,6 +291,14 @@ export default function ChatWorkspace() {
   // ── Auto-restore: select most recent conversation after load ─────────────────
   useEffect(() => {
     if (autoRestored || listLoading) return;
+
+    // When autostart=1 is in the URL, skip restore — a new conversation will be
+    // created automatically by the autostart effect below.
+    if (autoStart) {
+      setAutoRestored(true);
+      return;
+    }
+
     const items = convList?.items ?? [];
     if (items.length === 0) {
       setAutoRestored(true);
@@ -300,7 +323,35 @@ export default function ChatWorkspace() {
       saveLastConvId(mostRecent.id);
     }
     setAutoRestored(true);
-  }, [convList, listLoading, autoRestored]);
+  }, [convList, listLoading, autoRestored, autoStart]);
+
+  // ── Auto-create conversation when coming from import with autostart=1 ────────
+  useEffect(() => {
+    if (!autoStart || !autoRestored || autoStartInitiatedRef.current) return;
+    autoStartInitiatedRef.current = true;
+
+    createMutation.mutate(
+      { data: { title: "Repository Setup" } },
+      {
+        onSuccess: (conv) => {
+          if (!mountedRef.current) return;
+          queryClient.invalidateQueries({ queryKey: getListConversationsQueryKey() });
+          setSelectedId(conv.id);
+          setIsFirstMessage(true);
+          // Tie autostart message to this specific conversation only
+          setAutoStartConvId(conv.id);
+          // Clean the autostart param from the URL so a refresh doesn't re-trigger
+          const cleanUrl = window.location.pathname + `?repo=${initialRepoId ?? ""}`;
+          window.history.replaceState(null, "", cleanUrl);
+          if (window.innerWidth < 768) setSidebarOpen(false);
+        },
+        onError: () => {
+          if (!mountedRef.current) return;
+          toast.error("Failed to create conversation");
+        },
+      }
+    );
+  }, [autoStart, autoRestored]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Persist selected conversation ID ─────────────────────────────────────────
   useEffect(() => {
@@ -558,6 +609,7 @@ export default function ChatWorkspace() {
               isFirstMessage={isFirstMessage}
               onSuccess={handleWorkspaceSuccess}
               initialRepoId={initialRepoId}
+              autoStartMessage={selectedId === autoStartConvId ? AUTO_START_MESSAGE : undefined}
             />
           )}
         </div>

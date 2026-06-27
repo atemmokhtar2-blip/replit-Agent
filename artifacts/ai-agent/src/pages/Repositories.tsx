@@ -71,7 +71,7 @@ function ImportDialog({
       setUrl("");
       setPat("");
       setShowPat(false);
-      setLocation(`/chat?repo=${resp.repository.id}`);
+      setLocation(`/chat?repo=${resp.repository.id}&autostart=1`);
     },
     onError: (err: Error & { data?: { requires_auth?: boolean; message?: string } }) => {
       const data = err.data;

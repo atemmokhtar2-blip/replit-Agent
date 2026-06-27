@@ -672,6 +672,8 @@ interface PlannerWorkspaceProps {
   isFirstMessage: boolean;
   onSuccess: (conversationId: string) => void;
   initialRepoId?: string;
+  /** When set, the workspace fires this message automatically on first mount (used after repo import). */
+  autoStartMessage?: string;
 }
 
 export function PlannerWorkspace({
@@ -680,6 +682,7 @@ export function PlannerWorkspace({
   isFirstMessage,
   onSuccess,
   initialRepoId,
+  autoStartMessage,
 }: PlannerWorkspaceProps) {
   const queryClient = useQueryClient();
 
@@ -1126,6 +1129,25 @@ export function PlannerWorkspace({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void handleSend(); }
   };
+
+  // ── Auto-start: fire the initial message automatically after repo import ──────
+  // Use a ref so the timer always calls the latest handleSend (avoids stale closure).
+  const handleSendRef = useRef(handleSend);
+  useEffect(() => { handleSendRef.current = handleSend; }, [handleSend]);
+
+  const autoStartSentRef = useRef(false);
+  useEffect(() => {
+    if (!autoStartMessage || autoStartSentRef.current) return;
+    autoStartSentRef.current = true;
+    const timer = setTimeout(() => {
+      // Guard at call-time: only proceed if not already streaming or populated
+      if (!isStreaming && messages.length === 0) {
+        void handleSendRef.current(autoStartMessage);
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStartMessage]); // only runs once on mount; stale-closure risk mitigated by handleSendRef
 
   // ── Render history messages ──────────────────────────────────────────────────
 

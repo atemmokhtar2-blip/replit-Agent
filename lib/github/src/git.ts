@@ -55,27 +55,27 @@ export async function cloneRepository(options: CloneOptions): Promise<SimpleGit>
 
   await mkdir(destination, { recursive: true });
 
-  // These config flags skip LFS smudge filters so LFS-heavy repos don't abort
-  const lfsSkip = [
-    "--config", "filter.lfs.smudge=",
-    "--config", "filter.lfs.process=",
-    "--config", "filter.lfs.required=false",
-  ];
+  // Skip LFS smudge/checkout via env vars — avoids simple-git's unsafe-operations
+  // block that rejects --config filter.lfs.smudge= flags.
+  const lfsEnv = {
+    ...process.env,
+    GIT_LFS_SKIP_SMUDGE: "1",
+  };
 
-  const args: string[] = [`--depth=${depth}`, ...lfsSkip];
+  const args: string[] = [`--depth=${depth}`];
   if (branch) args.push(`--branch=${branch}`);
 
-  const git = simpleGit();
+  // Create a git instance with the LFS-skip env so git-lfs doesn't abort the clone
+  const git = simpleGit().env(lfsEnv);
   try {
     await git.clone(url, destination, args);
   } catch (err) {
     const msg = String(err);
-    // If LFS-related, attempt a bare clone without checkout as a last resort
+    // If still LFS/checkout-related, attempt without checkout as a last resort
     if (/lfs|smudge|filter|checkout/i.test(msg)) {
-      console.warn("[git] LFS error during clone, retrying with --no-checkout:", msg);
+      console.warn("[git] LFS error during clone, retrying with --no-checkout:", err);
       const noCheckoutArgs = [...args, "--no-checkout"];
-      await git.clone(url, destination, noCheckoutArgs).catch(() => {
-        // If even no-checkout fails, re-throw the original error
+      await simpleGit().env(lfsEnv).clone(url, destination, noCheckoutArgs).catch(() => {
         throw err;
       });
     } else {
