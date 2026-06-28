@@ -47,7 +47,8 @@ outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "pkill -f 'dist/index.mjs' 2>/dev/null || true; cd artifacts/api-server && pnpm run build && node --enable-source-maps ./dist/index.mjs"
+args = "pkill -f 'dist/index.mjs' 2>/dev/null || true; cd artifacts/api-server && ([ -f dist/index.mjs ] || pnpm run build) && node --enable-source-maps ./dist/index.mjs"
+waitForPort = 8000
 
 [agent]
 stack = "BEST_EFFORT_FALLBACK"

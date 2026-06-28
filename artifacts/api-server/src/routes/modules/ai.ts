@@ -33,6 +33,100 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 const router = Router();
+
+// ─── Public Preview Routes (no auth — served in iframe) ───────────────────────
+// These must come BEFORE router.use(authenticate) so the iframe can load without a JWT.
+
+router.get("/projects/:conversationId/preview", async (req, res) => {
+  const { conversationId } = req.params as { conversationId: string };
+  const safeId = conversationId.replace(/[^a-zA-Z0-9_-]/g, "");
+  if (!safeId) { res.status(400).send("Invalid conversation id"); return; }
+
+  const projectDir = path.join(PROJECT_FILES_BASE, safeId);
+
+  async function listFilesRecursive(dir: string, base: string): Promise<string[]> {
+    const results: string[] = [];
+    try {
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const rel = base ? `${base}/${entry.name}` : entry.name;
+        if (entry.isDirectory()) results.push(...await listFilesRecursive(path.join(dir, entry.name), rel));
+        else results.push(rel);
+      }
+    } catch { /* dir may not exist */ }
+    return results;
+  }
+
+  const files = await listFilesRecursive(projectDir, "");
+
+  // Serve index.html directly for proper preview rendering
+  const indexFile = files.find(f => f === "index.html" || f === "public/index.html" || f === "dist/index.html" || f.endsWith("/index.html"));
+  if (indexFile) {
+    try {
+      const content = await fs.readFile(path.join(projectDir, indexFile), "utf8");
+      // Rewrite relative asset paths to go through the public file endpoint
+      const base = `<base href="/api/v1/ai/projects/${safeId}/preview-asset/">`;
+      const withBase = content.replace(/<head([^>]*)>/i, `<head$1>${base}`);
+      res.setHeader("Content-Type", "text/html");
+      res.setHeader("X-Frame-Options", "SAMEORIGIN");
+      res.send(withBase);
+      return;
+    } catch { /* fall through to explorer */ }
+  }
+
+  if (files.length === 0) {
+    res.setHeader("Content-Type", "text/html");
+    res.send(`<!DOCTYPE html><html><head><title>No Preview</title>
+<style>body{font-family:monospace;background:#0f1117;color:#94a3b8;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;flex-direction:column;gap:1rem}
+.icon{font-size:2rem}.msg{color:#64748b;font-size:.9rem}</style></head>
+<body><div class="icon">🚧</div><p>No preview available yet.</p><p class="msg">Run an execution to generate project files.</p></body></html>`);
+    return;
+  }
+
+  // File explorer fallback
+  const fileLinks = files
+    .map(f => `<li><a href="/api/v1/ai/projects/${safeId}/preview-asset/${encodeURIComponent(f)}">${f}</a></li>`)
+    .join("\n");
+  res.setHeader("Content-Type", "text/html");
+  res.send(`<!DOCTYPE html><html>
+<head><title>Project Preview — ${safeId.slice(0, 8)}</title>
+<style>body{font-family:monospace;background:#0f1117;color:#e2e8f0;padding:2rem}
+h1{color:#7c3aed}ul{list-style:none;padding:0}li{padding:.25rem 0}
+a{color:#60a5fa;text-decoration:none}a:hover{text-decoration:underline}
+.badge{background:#1e1b4b;padding:.1rem .4rem;border-radius:4px;font-size:.8rem;margin-left:.5rem;color:#a5b4fc}</style></head>
+<body><h1>Generated Project Files</h1>
+<p>Conversation: <code>${safeId}</code><span class="badge">${files.length} files</span></p>
+<ul>${fileLinks}</ul></body></html>`);
+});
+
+// Serve individual asset files for the preview (no auth)
+router.get("/projects/:conversationId/preview-asset/{*filePath}", async (req, res) => {
+  const { conversationId } = req.params as { conversationId: string };
+  const filePath = (req.params as unknown as { filePath?: string })["filePath"] ?? "";
+  const safeId = conversationId.replace(/[^a-zA-Z0-9_-]/g, "");
+  const safeFilePath = path.normalize(decodeURIComponent(filePath)).replace(/^(\.\.[/\\])+/, "");
+  const projectDir = path.join(PROJECT_FILES_BASE, safeId);
+  const fullPath = path.join(projectDir, safeFilePath);
+
+  if (!fullPath.startsWith(projectDir)) { res.status(400).send("Invalid path"); return; }
+
+  try {
+    const content = await fs.readFile(fullPath, "utf8");
+    const ext = path.extname(fullPath).slice(1).toLowerCase();
+    const mimeMap: Record<string, string> = {
+      html: "text/html", css: "text/css", js: "text/javascript", mjs: "text/javascript",
+      json: "application/json", svg: "image/svg+xml", png: "image/png",
+      jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp",
+      md: "text/markdown", ts: "text/plain", tsx: "text/plain", txt: "text/plain",
+    };
+    res.setHeader("Content-Type", mimeMap[ext] ?? "text/plain");
+    res.setHeader("X-Frame-Options", "SAMEORIGIN");
+    res.send(content);
+  } catch {
+    res.status(404).send("File not found");
+  }
+});
+
 router.use(authenticate);
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

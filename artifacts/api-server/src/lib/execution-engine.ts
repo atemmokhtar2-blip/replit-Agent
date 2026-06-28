@@ -1550,7 +1550,7 @@ export class ExecutionService {
           : "http://localhost:5000";
 
       const previewUrl = generatedFiles.length > 0
-        ? `${baseUrl}/api/v1/ai/projects/${conversationId}/files`
+        ? `${baseUrl}/api/v1/ai/projects/${conversationId}/preview`
         : baseUrl;
 
       const allPassed = allResults.every(r => r.status !== "fail") && productionGate.allGatesPassed;
