@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,300..900;1,14..32,300..900&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @import "tailwindcss";
 @import "tw-animate-css";
@@ -67,130 +67,167 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 
+/* ── Project 7 Design System ────────────────────────────────────────────────── */
+
 :root {
+  /* ── Core Palette ───────────────────────────────────────────────────────── */
   --background: 240 10% 98%;
-  --foreground: 240 10% 10%;
+  --foreground: 240 10% 8%;
   --border: 240 10% 90%;
   --input: 240 10% 90%;
-  --ring: 250 84% 54%;
+  --ring: 252 87% 58%;
+
   --card: 0 0% 100%;
-  --card-foreground: 240 10% 10%;
+  --card-foreground: 240 10% 8%;
   --card-border: 240 10% 90%;
+
   --popover: 0 0% 100%;
-  --popover-foreground: 240 10% 10%;
+  --popover-foreground: 240 10% 8%;
   --popover-border: 240 10% 90%;
-  --primary: 250 84% 54%;
+
+  /* ── Project 7 Brand: Electric Indigo ───────────────────────────────────── */
+  --primary: 252 87% 58%;
   --primary-foreground: 210 40% 98%;
+
   --secondary: 240 10% 94%;
-  --secondary-foreground: 240 10% 10%;
+  --secondary-foreground: 240 10% 8%;
+
   --muted: 240 10% 94%;
-  --muted-foreground: 240 10% 40%;
+  --muted-foreground: 240 10% 42%;
+
   --accent: 240 10% 94%;
-  --accent-foreground: 240 10% 10%;
+  --accent-foreground: 240 10% 8%;
+
   --destructive: 0 84% 60%;
   --destructive-foreground: 210 40% 98%;
-  --chart-1: 250 84% 54%;
+
+  --chart-1: 252 87% 58%;
   --chart-2: 173 58% 39%;
   --chart-3: 197 37% 24%;
   --chart-4: 43 74% 66%;
   --chart-5: 27 87% 67%;
+
   --sidebar: 240 10% 98%;
   --sidebar-foreground: 240 10% 40%;
   --sidebar-border: 240 10% 90%;
-  --sidebar-primary: 240 10% 10%;
+  --sidebar-primary: 240 10% 8%;
   --sidebar-primary-foreground: 0 0% 100%;
   --sidebar-accent: 240 10% 94%;
-  --sidebar-accent-foreground: 240 10% 10%;
-  --sidebar-ring: 250 84% 54%;
+  --sidebar-accent-foreground: 240 10% 8%;
+  --sidebar-ring: 252 87% 58%;
 
-  --app-font-sans: 'Inter', sans-serif;
-  --app-font-mono: 'JetBrains Mono', monospace;
-  --radius: 0.5rem;
+  /* ── Typography ─────────────────────────────────────────────────────────── */
+  --app-font-sans: 'Inter', system-ui, sans-serif;
+  --app-font-mono: 'JetBrains Mono', 'Fira Code', monospace;
 
+  /* ── Geometry ───────────────────────────────────────────────────────────── */
+  --radius: 0.625rem;
+
+  /* ── Elevation ──────────────────────────────────────────────────────────── */
   --button-outline: rgba(0,0,0, .10);
   --badge-outline: rgba(0,0,0, .05);
   --opaque-button-border-intensity: -8;
   --elevate-1: rgba(0,0,0, .03);
   --elevate-2: rgba(0,0,0, .08);
 
-  /* ── Responsive layout tokens ──────────────────────────────────────────── */
-  --sidebar-width: 16rem;          /* 256px / w-64 */
-  --header-height: 3.5rem;         /* 56px  / h-14 */
+  /* ── Layout tokens ──────────────────────────────────────────────────────── */
+  --sidebar-width: 16rem;
+  --header-height: 3.5rem;
 
-  /* Safe area insets — populated by env() on supported devices */
+  /* ── Safe area insets ───────────────────────────────────────────────────── */
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
+
+  /* ── Project 7 Glow Tokens ──────────────────────────────────────────────── */
+  --seven-glow-sm: 0 0 12px rgba(99,102,241,0.35);
+  --seven-glow-md: 0 0 24px rgba(99,102,241,0.50);
+  --seven-glow-lg: 0 0 48px rgba(99,102,241,0.60);
+  --seven-glow-success: 0 0 20px rgba(34,197,94,0.50);
+  --seven-glow-warning: 0 0 20px rgba(251,191,36,0.50);
+  --seven-glow-error: 0 0 20px rgba(239,68,68,0.50);
 }
 
 .dark {
   --background: 240 10% 4%;
-  --foreground: 0 0% 98%;
+  --foreground: 0 0% 97%;
   --border: 240 10% 12%;
   --input: 240 10% 12%;
-  --ring: 250 84% 60%;
+  --ring: 252 87% 64%;
+
   --card: 240 10% 6%;
-  --card-foreground: 0 0% 98%;
+  --card-foreground: 0 0% 97%;
   --card-border: 240 10% 12%;
+
   --popover: 240 10% 6%;
-  --popover-foreground: 0 0% 98%;
+  --popover-foreground: 0 0% 97%;
   --popover-border: 240 10% 12%;
-  --primary: 250 84% 60%;
+
+  --primary: 252 87% 64%;
   --primary-foreground: 210 40% 98%;
+
   --secondary: 240 10% 12%;
-  --secondary-foreground: 0 0% 98%;
+  --secondary-foreground: 0 0% 97%;
+
   --muted: 240 10% 12%;
   --muted-foreground: 240 10% 65%;
-  --accent: 240 10% 12%;
-  --accent-foreground: 0 0% 98%;
+
+  --accent: 240 10% 14%;
+  --accent-foreground: 0 0% 97%;
+
   --destructive: 0 62% 30%;
   --destructive-foreground: 210 40% 98%;
-  --chart-1: 250 84% 60%;
+
+  --chart-1: 252 87% 64%;
   --chart-2: 173 58% 39%;
   --chart-3: 197 37% 24%;
   --chart-4: 43 74% 66%;
   --chart-5: 27 87% 67%;
+
   --sidebar: 240 10% 4%;
   --sidebar-foreground: 240 10% 65%;
-  --sidebar-border: 240 10% 12%;
-  --sidebar-primary: 250 84% 60%;
+  --sidebar-border: 240 10% 10%;
+  --sidebar-primary: 252 87% 64%;
   --sidebar-primary-foreground: 210 40% 98%;
-  --sidebar-accent: 240 10% 12%;
-  --sidebar-accent-foreground: 0 0% 98%;
-  --sidebar-ring: 250 84% 60%;
+  --sidebar-accent: 240 10% 10%;
+  --sidebar-accent-foreground: 0 0% 97%;
+  --sidebar-ring: 252 87% 64%;
 
   --button-outline: rgba(255,255,255, .10);
   --badge-outline: rgba(255,255,255, .05);
   --opaque-button-border-intensity: 9;
   --elevate-1: rgba(255,255,255, .04);
   --elevate-2: rgba(255,255,255, .09);
+
+  --seven-glow-sm: 0 0 14px rgba(129,140,248,0.45);
+  --seven-glow-md: 0 0 28px rgba(129,140,248,0.60);
+  --seven-glow-lg: 0 0 56px rgba(129,140,248,0.70);
+  --seven-glow-success: 0 0 22px rgba(74,222,128,0.55);
+  --seven-glow-warning: 0 0 22px rgba(253,224,71,0.55);
+  --seven-glow-error: 0 0 22px rgba(248,113,113,0.55);
 }
 
 @layer base {
-  /* ── Reset & base ──────────────────────────────────────────────────────── */
+  /* ── Reset ──────────────────────────────────────────────────────────────── */
   * {
     @apply border-border;
     box-sizing: border-box;
   }
 
   html {
-    /* Prevent iOS text size adjust after orientation change */
     -webkit-text-size-adjust: 100%;
     text-size-adjust: 100%;
-    /* Smooth scrolling */
     scroll-behavior: smooth;
   }
 
   body {
     @apply font-sans antialiased bg-background text-foreground;
-    /* Dynamic viewport height — correctly handles mobile browser chrome */
     min-height: 100dvh;
-    /* Prevent horizontal overflow at the document level */
     overflow-x: hidden;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
   }
 
-  /* ── App root — fills dynamic viewport exactly ─────────────────────────── */
   #root {
     height: 100dvh;
     display: flex;
@@ -198,14 +235,12 @@
     overflow: hidden;
   }
 
-  /* ── Prevent iOS form-input zoom (requires ≥ 16px font size) ──────────── */
   input,
   textarea,
   select {
     font-size: max(16px, 1em);
   }
 
-  /* ── Touch targets — improve tap accuracy ──────────────────────────────── */
   button,
   [role="button"],
   a,
@@ -214,10 +249,9 @@
     touch-action: manipulation;
   }
 
-  /* ── Scrollbar styling (Webkit) ────────────────────────────────────────── */
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
   }
   ::-webkit-scrollbar-track {
     background: transparent;
@@ -227,33 +261,27 @@
     border-radius: 3px;
   }
   ::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--muted-foreground) / 0.4);
+    background: hsl(var(--muted-foreground) / 0.35);
   }
 
-  /* ── Safe-area padding helpers ─────────────────────────────────────────── */
+  /* ── Safe area helpers ──────────────────────────────────────────────────── */
   .safe-top    { padding-top:    var(--safe-top); }
   .safe-right  { padding-right:  var(--safe-right); }
   .safe-bottom { padding-bottom: var(--safe-bottom); }
   .safe-left   { padding-left:   var(--safe-left); }
 
-  /* ── Page wrapper — used by all authenticated pages ───────────────────── */
+  /* ── Page wrapper ───────────────────────────────────────────────────────── */
   .page-content {
     @apply flex-1 w-full min-w-0 overflow-y-auto;
-    /* Consistent page padding — mobile-first */
     padding: 1rem;
   }
   @media (min-width: 640px) {
-    .page-content {
-      padding: 1.5rem;
-    }
+    .page-content { padding: 1.5rem; }
   }
   @media (min-width: 1024px) {
-    .page-content {
-      padding: 2rem;
-    }
+    .page-content { padding: 2rem; }
   }
 
-  /* ── Responsive page header — title + action row ──────────────────────── */
   .page-header {
     @apply flex flex-wrap items-start justify-between gap-3 mb-6;
   }
@@ -261,120 +289,179 @@
     @apply text-2xl font-bold tracking-tight md:text-3xl;
   }
 
-  /* ── Full-height flex column (for chat/workspace layouts) ─────────────── */
   .h-fill {
     height: 100%;
     min-height: 0;
   }
 
-  /* ── Agent execution pipeline animations ──────────────────────────────── */
-
-  /* Scanning dots — used in AgentTimeline running state */
-  @keyframes agent-dot-pulse {
-    0%, 60%, 100% {
-      opacity: 0.2;
-      transform: scale(0.75);
-    }
-    30% {
-      opacity: 1;
-      transform: scale(1.25);
-    }
+  /* ── Project 7 Glass Surface ────────────────────────────────────────────── */
+  .seven-glass {
+    background: hsl(var(--card) / 0.6);
+    backdrop-filter: blur(20px) saturate(1.4);
+    -webkit-backdrop-filter: blur(20px) saturate(1.4);
+    border: 1px solid hsl(var(--border) / 0.5);
   }
 
+  /* ── Project 7 Glow Utilities ───────────────────────────────────────────── */
+  .seven-glow-sm  { filter: var(--seven-glow-sm); }
+  .seven-glow-md  { filter: var(--seven-glow-md); }
+  .seven-glow-lg  { filter: var(--seven-glow-lg); }
+
+  /* ── Agent execution pipeline ───────────────────────────────────────────── */
+
+  @keyframes agent-dot-pulse {
+    0%, 60%, 100% { opacity: 0.2; transform: scale(0.75); }
+    30%           { opacity: 1;   transform: scale(1.25); }
+  }
   .agent-dot {
     animation: agent-dot-pulse 1.1s ease-in-out infinite;
   }
 
-  /* File tree line reveal — staggered fade+slide in */
   @keyframes agent-tree-reveal {
-    from {
-      opacity: 0;
-      transform: translateX(-6px);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(0);
-    }
+    from { opacity: 0; transform: translateX(-6px); }
+    to   { opacity: 1; transform: translateX(0); }
   }
-
   .agent-tree-line {
     opacity: 0;
     animation: agent-tree-reveal 0.18s ease-out forwards;
   }
 
-  /* Execution summary cell fade-in */
   @keyframes agent-cell-in {
-    from {
-      opacity: 0;
-      transform: translateY(4px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
   }
-
   .agent-summary-cell {
     opacity: 0;
     animation: agent-cell-in 0.22s ease-out forwards;
   }
 
-  /* Task Execution Panel — shimmer progress effect */
   @keyframes shimmer {
-    0% { transform: translateX(-100%); }
+    0%   { transform: translateX(-100%); }
     100% { transform: translateX(400%); }
   }
-
   .animate-shimmer {
     animation: shimmer 1.8s ease-in-out infinite;
   }
 
-  /* Task Details Drawer — slide in from right */
   @keyframes slide-in-right {
-    from {
-      transform: translateX(100%);
-      opacity: 0;
-    }
-    to {
-      transform: translateX(0);
-      opacity: 1;
-    }
+    from { transform: translateX(100%); opacity: 0; }
+    to   { transform: translateX(0);    opacity: 1; }
   }
-
   .animate-slide-in-right {
     animation: slide-in-right 0.22s ease-out forwards;
   }
 
-  /* Verification card — fade+scale reveal */
   @keyframes verification-card-enter {
-    from {
-      opacity: 0;
-      transform: translateY(8px) scale(0.98);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
+    from { opacity: 0; transform: translateY(8px) scale(0.98); }
+    to   { opacity: 1; transform: translateY(0)   scale(1); }
   }
-
   .verification-card-enter {
     animation: verification-card-enter 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards;
   }
 
-  /* Verification check row — staggered slide-in from left */
   @keyframes verify-check-row-in {
-    from {
-      opacity: 0;
-      transform: translateX(-8px);
-    }
-    to {
-      opacity: 1;
-      transform: translateX(0);
-    }
+    from { opacity: 0; transform: translateX(-8px); }
+    to   { opacity: 1; transform: translateX(0); }
   }
-
   .verify-check-row {
     opacity: 0;
     animation: verify-check-row-in 0.2s ease-out forwards;
+  }
+
+  /* ── Project 7 Motion Language ──────────────────────────────────────────── */
+
+  @keyframes seven-breathe {
+    0%, 100% { filter: drop-shadow(0 0 6px rgba(129,140,248,0.30)); }
+    50%       { filter: drop-shadow(0 0 18px rgba(129,140,248,0.75)); }
+  }
+  .seven-breathe {
+    animation: seven-breathe 3s ease-in-out infinite;
+  }
+
+  @keyframes seven-pulse {
+    0%, 100% { transform: scale(1);    filter: drop-shadow(0 0 8px rgba(129,140,248,0.50)); }
+    50%       { transform: scale(1.08); filter: drop-shadow(0 0 20px rgba(129,140,248,0.85)); }
+  }
+  .seven-pulse {
+    animation: seven-pulse 1.8s ease-in-out infinite;
+  }
+
+  @keyframes seven-orbit {
+    0%   { transform: rotate(0deg)   translateX(20px) rotate(0deg); }
+    100% { transform: rotate(360deg) translateX(20px) rotate(-360deg); }
+  }
+  .seven-orbit {
+    animation: seven-orbit 2.4s linear infinite;
+  }
+
+  @keyframes seven-success-flash {
+    0%   { filter: drop-shadow(0 0 0px rgba(74,222,128,0));   }
+    40%  { filter: drop-shadow(0 0 24px rgba(74,222,128,0.9)); }
+    100% { filter: drop-shadow(0 0 8px rgba(74,222,128,0.3));  }
+  }
+  .seven-success {
+    animation: seven-success-flash 0.8s ease-out forwards;
+  }
+
+  @keyframes seven-warning-pulse {
+    0%, 100% { filter: drop-shadow(0 0 8px rgba(251,191,36,0.40)); }
+    50%       { filter: drop-shadow(0 0 22px rgba(251,191,36,0.85)); }
+  }
+  .seven-warning {
+    animation: seven-warning-pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes seven-error-shake {
+    0%,100% { transform: translateX(0); filter: drop-shadow(0 0 8px rgba(248,113,113,0.4)); }
+    15%     { transform: translateX(-4px); }
+    30%     { transform: translateX(4px);  filter: drop-shadow(0 0 20px rgba(248,113,113,0.8)); }
+    45%     { transform: translateX(-3px); }
+    60%     { transform: translateX(3px);  }
+    75%     { transform: translateX(-1px); }
+  }
+  .seven-error {
+    animation: seven-error-shake 0.6s ease-out forwards;
+  }
+
+  @keyframes seven-sweep {
+    0%   { background-position: -200% center; }
+    100% { background-position: 200% center;  }
+  }
+  .seven-sweep {
+    background: linear-gradient(105deg,
+      transparent 30%,
+      rgba(255,255,255,0.55) 50%,
+      transparent 70%
+    );
+    background-size: 200% 100%;
+    animation: seven-sweep 1.5s ease-in-out infinite;
+  }
+
+  @keyframes seven-descend {
+    0%   { transform: translateY(-8px); opacity: 0.2; }
+    50%  { transform: translateY(0px);  opacity: 1;   }
+    100% { transform: translateY(8px);  opacity: 0.2; }
+  }
+  .seven-descend {
+    animation: seven-descend 1.2s ease-in-out infinite;
+  }
+
+  @keyframes seven-float {
+    0%, 100% { transform: translateY(0); }
+    50%       { transform: translateY(-5px); }
+  }
+  .seven-float {
+    animation: seven-float 3.2s ease-in-out infinite;
+  }
+
+  /* ── Particle animation for intro ───────────────────────────────────────── */
+  @keyframes particle-drift {
+    0%   { transform: translateY(0) scale(1);    opacity: 0; }
+    10%  { opacity: 1; }
+    90%  { opacity: 1; }
+    100% { transform: translateY(-40px) scale(0.8); opacity: 0; }
+  }
+  .seven-particle {
+    animation: particle-drift var(--drift-dur, 4s) var(--drift-delay, 0s) ease-in-out infinite;
   }
 }

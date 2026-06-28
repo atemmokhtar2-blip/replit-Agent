@@ -4,11 +4,12 @@ import { z } from "zod";
 import { Link, useLocation } from "wouter";
 import { useLogin } from "@workspace/api-client-react";
 import { useAuth } from "@/components/AuthProvider";
+import { Logo } from "@/components/Logo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { Loader2, Eye, EyeOff, Sparkles } from "lucide-react";
+import { Eye, EyeOff } from "lucide-react";
 import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -66,9 +67,18 @@ function AnimatedBackground() {
   return (
     <div className="fixed inset-0 -z-10 overflow-hidden">
       <div className="absolute inset-0 bg-background" />
-      <div className="absolute -top-40 -right-40 h-80 w-80 rounded-full bg-primary/10 blur-3xl animate-pulse" style={{ animationDuration: "4s" }} />
-      <div className="absolute -bottom-40 -left-40 h-80 w-80 rounded-full bg-primary/8 blur-3xl animate-pulse"  style={{ animationDuration: "6s", animationDelay: "1s" }} />
-      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-96 w-96 rounded-full bg-primary/5 blur-3xl animate-pulse" style={{ animationDuration: "8s", animationDelay: "2s" }} />
+      {/* Primary glow orbs */}
+      <div className="absolute -top-48 -right-48 h-96 w-96 rounded-full bg-primary/12 blur-3xl animate-pulse" style={{ animationDuration: "5s" }} />
+      <div className="absolute -bottom-48 -left-48 h-96 w-96 rounded-full bg-primary/8 blur-3xl animate-pulse" style={{ animationDuration: "7s", animationDelay: "1.5s" }} />
+      <div className="absolute top-1/3 left-1/2 -translate-x-1/2 h-[28rem] w-[28rem] rounded-full bg-primary/5 blur-3xl animate-pulse" style={{ animationDuration: "9s", animationDelay: "3s" }} />
+      {/* Subtle grid */}
+      <div
+        className="absolute inset-0 opacity-[0.025]"
+        style={{
+          backgroundImage: "linear-gradient(hsl(var(--primary)) 1px, transparent 1px), linear-gradient(90deg, hsl(var(--primary)) 1px, transparent 1px)",
+          backgroundSize: "48px 48px",
+        }}
+      />
     </div>
   );
 }
@@ -77,15 +87,10 @@ function AnimatedBackground() {
 
 type OAuthProvider = "google" | "github";
 
-interface OAuthButtonProps {
-  provider: OAuthProvider;
-  disabled: boolean;
-  loading:  boolean;
-  onClick:  () => void;
-}
-
-function OAuthButton({ provider, disabled, loading, onClick }: OAuthButtonProps) {
-  const config = {
+function OAuthButton({
+  provider, disabled, loading, onClick,
+}: { provider: OAuthProvider; disabled: boolean; loading: boolean; onClick: () => void }) {
+  const cfg = {
     google: {
       label:   "Continue with Google",
       loading: "Redirecting to Google…",
@@ -97,7 +102,7 @@ function OAuthButton({ provider, disabled, loading, onClick }: OAuthButtonProps)
       label:   "Continue with GitHub",
       loading: "Redirecting to GitHub…",
       icon:    <GitHubIcon className="h-5 w-5 flex-shrink-0" />,
-      cls:     "bg-[#24292e] dark:bg-[#24292e] text-white border-[#24292e]/80 hover:bg-[#1c2126] hover:shadow-md",
+      cls:     "bg-[#24292e] text-white border-[#24292e]/80 hover:bg-[#1c2126] hover:shadow-md",
       spinner: "text-white/80",
     },
   }[provider];
@@ -110,13 +115,13 @@ function OAuthButton({ provider, disabled, loading, onClick }: OAuthButtonProps)
       type="button"
       onClick={onClick}
       disabled={disabled}
-      className={`w-full flex items-center justify-center gap-3 h-12 rounded-xl border shadow-sm font-semibold text-sm transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed ${config.cls}`}
+      className={`w-full flex items-center justify-center gap-3 h-11 rounded-xl border shadow-sm font-semibold text-sm transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed ${cfg.cls}`}
     >
       {loading
-        ? <Loader2 className={`h-5 w-5 animate-spin ${config.spinner}`} />
-        : config.icon
+        ? <Logo size="xs" animate="pulse" variant="icon" className={cfg.spinner} />
+        : cfg.icon
       }
-      <span>{loading ? config.loading : config.label}</span>
+      <span>{loading ? cfg.loading : cfg.label}</span>
     </motion.button>
   );
 }
@@ -126,9 +131,9 @@ function OAuthButton({ provider, disabled, loading, onClick }: OAuthButtonProps)
 export default function Login() {
   const [, setLocation] = useLocation();
   const { login: authenticate, isAuthenticated } = useAuth();
-  const [showPassword,  setShowPassword]  = useState(false);
-  const [loadingOAuth,  setLoadingOAuth]  = useState<OAuthProvider | null>(null);
-  const [oauthError,    setOauthError]    = useState<string | null>(null);
+  const [showPassword, setShowPassword] = useState(false);
+  const [loadingOAuth, setLoadingOAuth] = useState<OAuthProvider | null>(null);
+  const [oauthError,   setOauthError]   = useState<string | null>(null);
 
   useEffect(() => {
     if (isAuthenticated) setLocation("/dashboard");
@@ -153,7 +158,7 @@ export default function Login() {
       },
       onError: (err) => {
         const message = (err as { data?: { error?: string } }).data?.error || "Please check your credentials and try again.";
-        toast.error("Login failed", { description: message });
+        toast.error("Sign in failed", { description: message });
       },
     });
   };
@@ -185,37 +190,40 @@ export default function Login() {
 
       <div className="flex min-h-screen items-center justify-center p-4">
         <motion.div
-          initial={{ opacity: 0, y: 24, scale: 0.97 }}
+          initial={{ opacity: 0, y: 28, scale: 0.96 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
-          transition={{ duration: 0.45, ease: [0.25, 0.46, 0.45, 0.94] }}
+          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
           className="w-full max-w-md"
         >
           {/* Glass card */}
-          <div className="relative rounded-2xl border border-white/10 bg-background/60 backdrop-blur-xl shadow-2xl shadow-black/20 overflow-hidden">
-            <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/60 to-transparent" />
+          <div className="relative rounded-2xl border border-border/40 bg-background/70 backdrop-blur-2xl shadow-2xl shadow-black/25 overflow-hidden">
+            {/* Top shimmer line */}
+            <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/70 to-transparent" />
 
             <div className="px-8 pt-10 pb-8 space-y-6">
 
-              {/* Header */}
+              {/* Header — Project 7 mark */}
               <motion.div
-                initial={{ opacity: 0, y: 8 }}
+                initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1, duration: 0.35 }}
-                className="text-center space-y-3"
+                transition={{ delay: 0.12, duration: 0.38 }}
+                className="text-center space-y-4"
               >
-                <div className="inline-flex items-center justify-center h-12 w-12 rounded-xl bg-primary/10 border border-primary/20 mx-auto mb-1">
-                  <Sparkles className="h-6 w-6 text-primary" />
+                <div className="flex justify-center">
+                  <Logo size="xl" animate="idle" variant="icon" />
                 </div>
-                <h1 className="text-2xl font-bold tracking-tight text-foreground">Welcome back</h1>
-                <p className="text-sm text-muted-foreground">Sign in to continue to AI Agent</p>
+                <div className="space-y-1">
+                  <h1 className="text-2xl font-bold tracking-tight text-foreground">Welcome back</h1>
+                  <p className="text-sm text-muted-foreground">Sign in to Project 7</p>
+                </div>
               </motion.div>
 
-              {/* OAuth buttons — always visible */}
+              {/* OAuth buttons */}
               <motion.div
                 initial={{ opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.15, duration: 0.35 }}
-                className="space-y-3"
+                transition={{ delay: 0.18, duration: 0.35 }}
+                className="space-y-2.5"
               >
                 <OAuthButton
                   provider="google"
@@ -250,7 +258,7 @@ export default function Login() {
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ delay: 0.2, duration: 0.35 }}
+                transition={{ delay: 0.22, duration: 0.35 }}
                 className="relative flex items-center"
               >
                 <div className="flex-1 h-px bg-border/60" />
@@ -260,7 +268,7 @@ export default function Login() {
                 <div className="flex-1 h-px bg-border/60" />
               </motion.div>
 
-              {/* Email / password form — always visible */}
+              {/* Email / password form */}
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" noValidate>
                 <div className="space-y-1.5">
                   <Label htmlFor="email" className="text-sm font-medium">Email</Label>
@@ -310,7 +318,7 @@ export default function Login() {
                   className="w-full h-10 rounded-lg font-semibold"
                   disabled={isPending || anyOAuthLoading}
                 >
-                  {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  {isPending && <Logo size="xs" animate="pulse" variant="icon" className="mr-2" />}
                   {isPending ? "Signing in…" : "Sign In"}
                 </Button>
               </form>
@@ -319,7 +327,7 @@ export default function Login() {
               <motion.p
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                transition={{ delay: 0.3, duration: 0.35 }}
+                transition={{ delay: 0.32, duration: 0.35 }}
                 className="text-center text-sm text-muted-foreground"
               >
                 Don&apos;t have an account?{" "}
@@ -335,8 +343,8 @@ export default function Login() {
           <motion.p
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ delay: 0.4, duration: 0.35 }}
-            className="mt-4 text-center text-xs text-muted-foreground/60"
+            transition={{ delay: 0.42, duration: 0.35 }}
+            className="mt-4 text-center text-xs text-muted-foreground/50"
           >
             By continuing, you agree to our Terms of Service and Privacy Policy.
           </motion.p>

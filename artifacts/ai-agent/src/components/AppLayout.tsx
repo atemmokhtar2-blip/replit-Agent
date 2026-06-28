@@ -25,7 +25,6 @@ import {
   Sparkles,
 } from "lucide-react";
 
-// ── Breakpoint constant (matches Tailwind's lg: 1024px) ──────────────────────
 const LG_BREAKPOINT = 1024;
 
 function getInitialSidebarState(): boolean {
@@ -42,24 +41,18 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     typeof window !== "undefined" ? window.innerWidth >= LG_BREAKPOINT : true
   );
 
-  // ── Track desktop/mobile breakpoint ──────────────────────────────────────
   useEffect(() => {
     const mql = window.matchMedia(`(min-width: ${LG_BREAKPOINT}px)`);
     const handler = (e: MediaQueryListEvent) => {
       setIsDesktop(e.matches);
-      if (e.matches) {
-        setSidebarOpen(true);
-      }
+      if (e.matches) setSidebarOpen(true);
     };
     mql.addEventListener("change", handler);
     return () => mql.removeEventListener("change", handler);
   }, []);
 
-  // ── Auto-close sidebar on navigation (mobile / tablet only) ──────────────
   useEffect(() => {
-    if (!isDesktop) {
-      setSidebarOpen(false);
-    }
+    if (!isDesktop) setSidebarOpen(false);
   }, [location, isDesktop]);
 
   const handleLogout = () => {
@@ -76,31 +69,31 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }, [isDesktop]);
 
   const navItems = [
-    { href: "/chat", label: "Chat", icon: MessageSquare },
-    { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/projects", label: "Projects", icon: FolderGit2 },
-    { href: "/repositories", label: "Repositories", icon: GitFork },
-    { href: "/workspaces", label: "Workspaces", icon: Layers },
-    { href: "/secrets", label: "Secrets", icon: KeyRound },
-    { href: "/ai-engine", label: "AI Engine", icon: BrainCircuit },
+    { href: "/chat",          label: "Chat",          icon: MessageSquare },
+    { href: "/dashboard",     label: "Dashboard",     icon: LayoutDashboard },
+    { href: "/projects",      label: "Projects",      icon: FolderGit2 },
+    { href: "/repositories",  label: "Repositories",  icon: GitFork },
+    { href: "/workspaces",    label: "Workspaces",    icon: Layers },
+    { href: "/secrets",       label: "Secrets",       icon: KeyRound },
+    { href: "/ai-engine",     label: "AI Engine",     icon: BrainCircuit },
     { href: "/notifications", label: "Notifications", icon: Bell },
-    { href: "/control-center", label: "AI Control", icon: Cpu },
-    { href: "/settings", label: "Settings", icon: Settings },
+    { href: "/control-center",label: "AI Control",    icon: Cpu },
+    { href: "/settings",      label: "Settings",      icon: Settings },
   ];
 
   if (user?.role === "admin" || user?.role === "super_admin") {
     navItems.push({ href: "/ai-providers", label: "AI Providers", icon: Network });
-    navItems.push({ href: "/ai-models", label: "AI Models", icon: Sparkles });
-    navItems.push({ href: "/admin", label: "Admin", icon: ShieldAlert });
+    navItems.push({ href: "/ai-models",    label: "AI Models",    icon: Sparkles });
+    navItems.push({ href: "/admin",        label: "Admin",        icon: ShieldAlert });
   }
 
   return (
     <div className="flex h-dvh w-full overflow-hidden bg-background text-foreground">
 
-      {/* ── Overlay backdrop — mobile / tablet only ─────────────────────────── */}
+      {/* Mobile overlay */}
       {sidebarOpen && !isDesktop && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm lg:hidden"
           onClick={() => setSidebarOpen(false)}
           aria-hidden="true"
         />
@@ -109,20 +102,18 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
       {/* ── Sidebar ──────────────────────────────────────────────────────────── */}
       <aside
         className={[
-          // Base: fixed overlay on mobile / tablet
           "fixed inset-y-0 left-0 z-50 flex flex-col border-r border-border bg-card",
           "w-[var(--sidebar-width)] transition-transform duration-300 ease-in-out",
-          // Mobile/tablet: slide in/out
           sidebarOpen ? "translate-x-0" : "-translate-x-full",
-          // Desktop: always in normal document flow, always visible
           "lg:relative lg:z-auto lg:translate-x-0",
         ].join(" ")}
         aria-label="Main navigation"
       >
-        {/* Brand / Logo */}
+        {/* Brand */}
         <div className="flex h-[var(--header-height)] flex-shrink-0 items-center gap-2 border-b border-border px-5">
-          <Logo size="sm" animate="glow" entrance={false} />
-          {/* Close button — mobile only */}
+          <Link href="/dashboard" className="flex items-center gap-2 flex-1 min-w-0">
+            <Logo size="sm" animate="idle" entrance={false} />
+          </Link>
           <Button
             variant="ghost"
             size="icon"
@@ -135,7 +126,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
         </div>
 
         {/* Nav items */}
-        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5">
+        <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-0.5" aria-label="Primary">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive =
@@ -147,10 +138,10 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
                 href={item.href}
                 onClick={closeSidebar}
                 className={[
-                  "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm font-medium transition-colors",
+                  "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-150",
                   "min-h-[2.5rem]",
                   isActive
-                    ? "bg-primary/10 text-primary"
+                    ? "bg-primary/10 text-primary shadow-[inset_0_0_0_1px_hsl(var(--primary)/0.15)]"
                     : "text-muted-foreground hover:bg-muted hover:text-foreground",
                 ].join(" ")}
               >
@@ -163,35 +154,35 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
         {/* User section */}
         <div className="flex-shrink-0 border-t border-border p-3">
-          <div className="flex items-center gap-3 mb-3 px-2 min-w-0">
-            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-primary/20 text-primary text-sm font-semibold">
+          <Link
+            href="/profile"
+            onClick={closeSidebar}
+            className="flex items-center gap-3 mb-3 px-2 min-w-0 rounded-lg py-1.5 hover:bg-muted/60 transition-colors"
+          >
+            <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary text-sm font-semibold ring-1 ring-primary/20">
               {user?.username?.[0]?.toUpperCase() ?? "U"}
             </div>
             <div className="flex min-w-0 flex-col">
-              <span className="truncate text-sm font-medium">
-                {user?.username}
-              </span>
-              <span className="truncate text-xs text-muted-foreground">
-                {user?.email}
-              </span>
+              <span className="truncate text-sm font-medium">{user?.username}</span>
+              <span className="truncate text-xs text-muted-foreground">{user?.email}</span>
             </div>
-          </div>
+          </Link>
           <Button
             variant="ghost"
-            className="w-full justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10 min-h-[2.5rem]"
+            className="w-full justify-start text-muted-foreground hover:text-destructive hover:bg-destructive/10 min-h-[2.5rem] transition-colors"
             onClick={handleLogout}
             disabled={logoutMutation.isPending}
           >
             <LogOut className="mr-2 h-4 w-4" />
-            Logout
+            Sign out
           </Button>
         </div>
       </aside>
 
-      {/* ── Main content column ──────────────────────────────────────────────── */}
+      {/* ── Main content ─────────────────────────────────────────────────────── */}
       <div className="flex flex-1 flex-col min-w-0 overflow-hidden">
 
-        {/* Mobile / tablet top header */}
+        {/* Mobile top header */}
         <header
           className="flex h-[var(--header-height)] flex-shrink-0 items-center gap-3 border-b border-border bg-card px-4 lg:hidden"
           style={{ paddingTop: "var(--safe-top)" }}
@@ -205,9 +196,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           >
             <Menu className="h-5 w-5" />
           </Button>
-          <Logo size="sm" animate="glow" entrance={false} />
+          <Logo size="sm" animate="idle" entrance={false} />
 
-          {/* Desktop sidebar toggle — visible on lg+ inside the header */}
           <div className="hidden lg:flex ml-auto">
             <Button
               variant="ghost"
@@ -225,7 +215,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        {/* Page content */}
         <main className="flex-1 min-w-0 overflow-hidden" role="main">
           {children}
         </main>

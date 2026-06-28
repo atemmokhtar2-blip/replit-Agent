@@ -7,8 +7,9 @@ import { AuthProvider, useAuth } from "@/components/AuthProvider";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AppLayout } from "@/components/AppLayout";
 import { TaskProvider } from "@/lib/task-store";
-import { Loader2 } from "lucide-react";
-import { useEffect } from "react";
+import { SevenIntro, hasSeenIntro } from "@/components/SevenIntro";
+import { Logo } from "@/components/Logo";
+import { useEffect, useState } from "react";
 
 import NotFound from "@/pages/not-found";
 
@@ -43,7 +44,7 @@ const queryClient = new QueryClient({
   },
 });
 
-// ── Root redirect: unauthenticated → /login, authenticated → /dashboard ──────
+// ── Root redirect ──────────────────────────────────────────────────────────────
 
 function RootPage() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -60,16 +61,12 @@ function RootPage() {
 
   return (
     <div className="flex h-screen w-full items-center justify-center bg-background">
-      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <Logo size="xl" animate="loading" variant="icon" />
     </div>
   );
 }
 
-// ── Stable page components for protected routes ───────────────────────────────
-// All routes MUST use the `component` prop (not children) inside <Switch>.
-// Mixing the two patterns causes Wouter's reconciler to produce an inconsistent
-// React element tree across renders, which triggers React 18's insertBefore
-// DOM crash when switching between routes.
+// ── Protected page wrappers ────────────────────────────────────────────────────
 
 const ChatPage = () => (
   <ProtectedRoute>
@@ -189,50 +186,57 @@ const ProfilePage = () => (
   </ProtectedRoute>
 );
 
-const LandingPage = () => <Landing />;
-const LoginPage = () => <Login />;
-const RegisterPage = () => <Register />;
+const LandingPage       = () => <Landing />;
+const LoginPage         = () => <Login />;
+const RegisterPage      = () => <Register />;
 const ForgotPasswordPage = () => <ForgotPassword />;
-const ResetPasswordPage = () => <ResetPassword />;
-const OAuthCallbackPage = () => <OAuthCallback />;
+const ResetPasswordPage  = () => <ResetPassword />;
+const OAuthCallbackPage  = () => <OAuthCallback />;
 
 function Router() {
   return (
     <Switch>
-      <Route path="/" component={RootPage} />
-      <Route path="/landing" component={LandingPage} />
-      <Route path="/login" component={LoginPage} />
-      <Route path="/register" component={RegisterPage} />
+      <Route path="/"                component={RootPage} />
+      <Route path="/landing"         component={LandingPage} />
+      <Route path="/login"           component={LoginPage} />
+      <Route path="/register"        component={RegisterPage} />
       <Route path="/forgot-password" component={ForgotPasswordPage} />
-      <Route path="/reset-password" component={ResetPasswordPage} />
-      <Route path="/auth/callback" component={OAuthCallbackPage} />
-      <Route path="/chat" component={ChatPage} />
-      <Route path="/dashboard" component={DashboardPage} />
-      <Route path="/projects" component={ProjectsPage} />
-      <Route path="/projects/:id" component={ProjectWorkspacePage} />
-      <Route path="/settings" component={SettingsPage} />
-      <Route path="/notifications" component={NotificationsPage} />
-      <Route path="/admin" component={AdminPage} />
-      <Route path="/control-center" component={ControlCenterPage} />
-      <Route path="/repositories" component={RepositoriesPage} />
-      <Route path="/secrets" component={SecretsCenterPage} />
-      <Route path="/workspaces" component={WorkspacesPage} />
-      <Route path="/ai-engine" component={AIEnginePage} />
-      <Route path="/ai-providers" component={AIProvidersPageWrapper} />
-      <Route path="/ai-models" component={AIModelsPageWrapper} />
-      <Route path="/profile" component={ProfilePage} />
-      <Route component={NotFound} />
+      <Route path="/reset-password"  component={ResetPasswordPage} />
+      <Route path="/auth/callback"   component={OAuthCallbackPage} />
+      <Route path="/chat"            component={ChatPage} />
+      <Route path="/dashboard"       component={DashboardPage} />
+      <Route path="/projects"        component={ProjectsPage} />
+      <Route path="/projects/:id"    component={ProjectWorkspacePage} />
+      <Route path="/settings"        component={SettingsPage} />
+      <Route path="/notifications"   component={NotificationsPage} />
+      <Route path="/admin"           component={AdminPage} />
+      <Route path="/control-center"  component={ControlCenterPage} />
+      <Route path="/repositories"    component={RepositoriesPage} />
+      <Route path="/secrets"         component={SecretsCenterPage} />
+      <Route path="/workspaces"      component={WorkspacesPage} />
+      <Route path="/ai-engine"       component={AIEnginePage} />
+      <Route path="/ai-providers"    component={AIProvidersPageWrapper} />
+      <Route path="/ai-models"       component={AIModelsPageWrapper} />
+      <Route path="/profile"         component={ProfilePage} />
+      <Route                         component={NotFound} />
     </Switch>
   );
 }
 
 function App() {
+  const [introComplete, setIntroComplete] = useState(hasSeenIntro);
+
   return (
     <ThemeProvider defaultTheme="dark">
       <QueryClientProvider client={queryClient}>
         <AuthProvider>
           <TaskProvider>
             <TooltipProvider>
+              {/* Cinematic startup — shown once on first visit */}
+              {!introComplete && (
+                <SevenIntro onComplete={() => setIntroComplete(true)} />
+              )}
+
               <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
                 <Router />
                 <Toaster />

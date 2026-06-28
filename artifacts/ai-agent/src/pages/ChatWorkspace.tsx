@@ -234,9 +234,9 @@ function NoConversationState({ onCreate, isCreating }: { onCreate: () => void; i
     <div className="flex h-full flex-col items-center justify-center gap-6 p-8 text-center">
       <NeuralGrid width={120} height={80} color="#6366f1" active />
       <div className="max-w-xs">
-        <h2 className="text-base font-semibold text-foreground mb-1">AI Agent Planner</h2>
+        <h2 className="text-base font-semibold text-foreground mb-1">7 Planner</h2>
         <p className="text-sm text-muted-foreground leading-relaxed">
-          Describe the software you want to build. The AI Agent will design a complete architecture blueprint across 8 real execution stages.
+          Describe the software you want to build. Project 7 will design a complete architecture blueprint across 8 real execution stages.
         </p>
       </div>
       <Button onClick={onCreate} disabled={isCreating} size="sm" className="gap-2">
@@ -534,7 +534,7 @@ export default function ChatWorkspace() {
                 <path d="M8 1.5L10 6L14.5 8L10 10L8 14.5L6 10L1.5 8L6 6L8 1.5Z" fill="currentColor" opacity="0.9"/>
               </svg>
             </div>
-            <span className="text-sm font-medium text-foreground flex-1">AI Agent</span>
+            <span className="text-sm font-medium text-foreground flex-1">Project 7</span>
             <button
               onClick={() => { setSidebarOpen(false); }}
               className="md:hidden flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
@@ -658,7 +658,7 @@ export default function ChatWorkspace() {
             }
           </button>
           <h1 className="truncate text-sm text-muted-foreground/70">
-            {selectedId && activeConv ? (activeConv.title ?? "New conversation") : "AI Agent"}
+            {selectedId && activeConv ? (activeConv.title ?? "New conversation") : "Project 7"}
           </h1>
         </div>
 
