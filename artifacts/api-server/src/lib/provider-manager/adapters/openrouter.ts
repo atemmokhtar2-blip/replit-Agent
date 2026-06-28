@@ -7,6 +7,7 @@ export const openRouterAdapter: ProviderAdapter = {
   slug:        "openrouter",
   displayName: "OpenRouter",
   baseUrl:     BASE_URL,
+  envPrefix:   "OPENROUTER_API_KEY",
   defaultModels: {
     planning:      "moonshotai/kimi-k2",
     "code-gen":    "moonshotai/kimi-k2",

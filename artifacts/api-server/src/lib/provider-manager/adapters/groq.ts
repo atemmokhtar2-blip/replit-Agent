@@ -7,6 +7,7 @@ export const groqAdapter: ProviderAdapter = {
   slug:        "groq",
   displayName: "Groq",
   baseUrl:     BASE_URL,
+  envPrefix:   "GROQ_API_KEY",
   defaultModels: {
     planning:      "llama-3.3-70b-versatile",
     "code-gen":    "moonshotai/kimi-k2",

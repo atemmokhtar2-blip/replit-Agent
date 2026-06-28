@@ -8,6 +8,7 @@
  */
 
 export { ProviderManager } from "./manager.js";
+export { ModelDiscoveryService } from "./model-discovery.js";
 export type {
   LLMMessage,
   LLMOptions,
@@ -17,6 +18,9 @@ export type {
   RoutingStrategy,
   ProviderError,
   ProviderErrorKind,
+  ProviderAdapter,
+  DiscoveredModel,
+  ModelCategory,
   SystemHealthReport,
   ProviderHealthReport,
   KeyHealthReport,

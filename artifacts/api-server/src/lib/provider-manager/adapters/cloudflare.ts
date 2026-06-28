@@ -11,6 +11,7 @@ export const cloudflareAdapter: ProviderAdapter = {
   slug:        "cloudflare",
   displayName: "Cloudflare AI",
   baseUrl:     "https://api.cloudflare.com/client/v4/accounts",
+  envPrefix:   "CLOUDFLARE_API_KEY",
   defaultModels: {
     planning:      "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
     "code-gen":    "@cf/meta/llama-3.3-70b-instruct-fp8-fast",

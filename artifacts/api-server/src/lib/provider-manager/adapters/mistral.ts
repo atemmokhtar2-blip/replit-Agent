@@ -7,6 +7,7 @@ export const mistralAdapter: ProviderAdapter = {
   slug:        "mistral",
   displayName: "Mistral AI",
   baseUrl:     BASE_URL,
+  envPrefix:   "MISTRAL_API_KEY",
   defaultModels: {
     planning:      "mistral-large-latest",
     "code-gen":    "codestral-latest",

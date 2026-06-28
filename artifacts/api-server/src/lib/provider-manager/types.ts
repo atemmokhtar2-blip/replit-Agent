@@ -31,14 +31,14 @@ export type KeyStatus      = "active" | "disabled" | "exhausted" | "cooling" | "
 // ── Error classification ───────────────────────────────────────────────────────
 
 export type ProviderErrorKind =
-  | "insufficient_credits"  // 402
-  | "auth_failed"           // 401 | 403
-  | "rate_limited"          // 429
-  | "timeout"              // 408 | 504 | AbortError
-  | "server_error"          // 500–503
-  | "parse_error"           // bad JSON / empty body
-  | "incomplete_response"   // content too short
-  | "network_error"         // fetch threw
+  | "insufficient_credits"
+  | "auth_failed"
+  | "rate_limited"
+  | "timeout"
+  | "server_error"
+  | "parse_error"
+  | "incomplete_response"
+  | "network_error"
   | "unknown";
 
 export interface ProviderError {
@@ -81,14 +81,44 @@ export interface LLMOptions {
 }
 
 export interface LLMResponse {
-  content:          string;
-  model:            string;
-  providerSlug:     string;
-  keyId:            string;
-  promptTokens?:    number;
+  content:           string;
+  model:             string;
+  providerSlug:      string;
+  keyId:             string;
+  promptTokens?:     number;
   completionTokens?: number;
-  latencyMs:        number;
-  retries:          number;
+  latencyMs:         number;
+  retries:           number;
+}
+
+// ── Model discovery ────────────────────────────────────────────────────────────
+
+export type ModelCategory =
+  | "coding"
+  | "reasoning"
+  | "fast"
+  | "vision"
+  | "long-context"
+  | "general"
+  | "free"
+  | "paid"
+  | "multimodal";
+
+export interface DiscoveredModel {
+  modelId:           string;
+  displayName:       string;
+  description?:      string;
+  contextLength?:    number;
+  inputPricePer1M?:  number;  // USD per 1M prompt tokens
+  outputPricePer1M?: number;  // USD per 1M completion tokens
+  isFree:            boolean;
+  supportsVision:    boolean;
+  supportsTools:     boolean;
+  supportsReasoning: boolean;
+  supportsStreaming: boolean;
+  categories:        ModelCategory[];
+  rankScore:         number;
+  rawMetadata?:      Record<string, unknown>;
 }
 
 // ── Provider adapter interface ─────────────────────────────────────────────────
@@ -97,6 +127,7 @@ export interface ProviderAdapter {
   readonly slug:          string;
   readonly displayName:   string;
   readonly baseUrl:       string;
+  readonly envPrefix:     string;   // e.g. "OPENROUTER_API_KEY" — used for auto-discovery
   readonly defaultModels: Record<TaskType, string>;
 
   complete(
@@ -108,6 +139,12 @@ export interface ProviderAdapter {
   testConnection(apiKey: string): Promise<{ ok: boolean; latencyMs: number; error?: string }>;
 
   classifyError(err: unknown, statusCode?: number): ProviderError;
+
+  /**
+   * Optional: fetch models available for this API key from the provider's API.
+   * When implemented, called during model discovery to populate aiDiscoveredModelsTable.
+   */
+  listModels?(apiKey: string): Promise<DiscoveredModel[]>;
 }
 
 // ── In-memory runtime key state ───────────────────────────────────────────────
@@ -135,20 +172,20 @@ export interface RuntimeKeyState {
 // ── In-memory runtime provider state ─────────────────────────────────────────
 
 export interface RuntimeProviderState {
-  slug:            string;
-  displayName:     string;
-  enabled:         boolean;
-  priority:        number;
-  routingStrategy: RoutingStrategy;
-  healthScore:     number;
-  status:          ProviderStatus;
-  totalRequests:   number;
-  successCount:    number;
-  failureCount:    number;
-  avgLatencyMs:    number;
+  slug:             string;
+  displayName:      string;
+  enabled:          boolean;
+  priority:         number;
+  routingStrategy:  RoutingStrategy;
+  healthScore:      number;
+  status:           ProviderStatus;
+  totalRequests:    number;
+  successCount:     number;
+  failureCount:     number;
+  avgLatencyMs:     number;
   lastHealthCheck?: Date;
-  keys:            RuntimeKeyState[];
-  rrIndex:         number;  // round-robin cursor
+  keys:             RuntimeKeyState[];
+  rrIndex:          number;
 }
 
 // ── Health report ──────────────────────────────────────────────────────────────
@@ -171,32 +208,32 @@ export interface KeyHealthReport {
 }
 
 export interface ProviderHealthReport {
-  slug:            string;
-  displayName:     string;
-  status:          ProviderStatus;
-  healthScore:     number;
-  enabled:         boolean;
-  priority:        number;
-  totalRequests:   number;
-  successCount:    number;
-  failureCount:    number;
-  successRate:     number;
-  avgLatencyMs:    number;
+  slug:             string;
+  displayName:      string;
+  status:           ProviderStatus;
+  healthScore:      number;
+  enabled:          boolean;
+  priority:         number;
+  totalRequests:    number;
+  successCount:     number;
+  failureCount:     number;
+  successRate:      number;
+  avgLatencyMs:     number;
   lastHealthCheck?: string;
-  activeKeys:      number;
-  totalKeys:       number;
-  keys:            KeyHealthReport[];
+  activeKeys:       number;
+  totalKeys:        number;
+  keys:             KeyHealthReport[];
 }
 
 export interface SystemHealthReport {
-  generatedAt:      string;
-  activeProviders:  number;
-  totalProviders:   number;
-  totalKeys:        number;
-  activeKeys:       number;
-  totalRequests:    number;
-  overallSuccess:   number;
-  avgLatencyMs:     number;
-  currentStrategy:  RoutingStrategy;
-  providers:        ProviderHealthReport[];
+  generatedAt:     string;
+  activeProviders: number;
+  totalProviders:  number;
+  totalKeys:       number;
+  activeKeys:      number;
+  totalRequests:   number;
+  overallSuccess:  number;
+  avgLatencyMs:    number;
+  currentStrategy: RoutingStrategy;
+  providers:       ProviderHealthReport[];
 }

@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input";
 import { LiveWorkspace } from "@/components/workspace/LiveWorkspace";
 import { AIPulse } from "@/components/design-system/AIPulse";
 import { NeuralGrid } from "@/components/design-system/NeuralGrid";
+import { ProviderMonitorWidget } from "@/components/ProviderMonitorWidget";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
@@ -627,6 +628,9 @@ export default function ChatWorkspace() {
             </>
           )}
         </div>
+
+        {/* Provider Monitor */}
+        <ProviderMonitorWidget />
 
         {/* Footer */}
         <div className="flex-shrink-0 border-t border-border/50 p-3">

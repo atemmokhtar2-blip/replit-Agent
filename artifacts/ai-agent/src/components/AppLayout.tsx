@@ -22,6 +22,7 @@ import {
   Layers,
   BrainCircuit,
   Network,
+  Sparkles,
 } from "lucide-react";
 
 // ── Breakpoint constant (matches Tailwind's lg: 1024px) ──────────────────────
@@ -89,6 +90,7 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
 
   if (user?.role === "admin" || user?.role === "super_admin") {
     navItems.push({ href: "/ai-providers", label: "AI Providers", icon: Network });
+    navItems.push({ href: "/ai-models", label: "AI Models", icon: Sparkles });
     navItems.push({ href: "/admin", label: "Admin", icon: ShieldAlert });
   }
 

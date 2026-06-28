@@ -20,6 +20,7 @@ export const geminiAdapter: ProviderAdapter = {
   slug:        "gemini",
   displayName: "Google Gemini",
   baseUrl:     BASE_URL,
+  envPrefix:   "GEMINI_API_KEY",
   defaultModels: {
     planning:      "gemini-2.5-flash",
     "code-gen":    "gemini-2.5-flash",

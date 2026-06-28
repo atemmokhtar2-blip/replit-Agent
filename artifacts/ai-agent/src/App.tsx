@@ -32,6 +32,7 @@ import ControlCenter from "@/pages/ControlCenter";
 import Workspaces from "@/pages/Workspaces";
 import AIEngine from "@/pages/AIEngine";
 import AIProvidersPage from "@/pages/AIProvidersPage";
+import AIModelsPage from "@/pages/AIModelsPage";
 import Profile from "@/pages/Profile";
 
 const queryClient = new QueryClient({
@@ -172,6 +173,14 @@ const AIProvidersPageWrapper = () => (
   </ProtectedRoute>
 );
 
+const AIModelsPageWrapper = () => (
+  <ProtectedRoute requireAdmin>
+    <AppLayout>
+      <AIModelsPage />
+    </AppLayout>
+  </ProtectedRoute>
+);
+
 const ProfilePage = () => (
   <ProtectedRoute>
     <AppLayout>
@@ -210,6 +219,7 @@ function Router() {
       <Route path="/workspaces" component={WorkspacesPage} />
       <Route path="/ai-engine" component={AIEnginePage} />
       <Route path="/ai-providers" component={AIProvidersPageWrapper} />
+      <Route path="/ai-models" component={AIModelsPageWrapper} />
       <Route path="/profile" component={ProfilePage} />
       <Route component={NotFound} />
     </Switch>

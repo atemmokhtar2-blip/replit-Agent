@@ -83,8 +83,18 @@ import { geminiAdapter      } from "./adapters/gemini.js";
 import { groqAdapter        } from "./adapters/groq.js";
 import { cloudflareAdapter  } from "./adapters/cloudflare.js";
 import { mistralAdapter     } from "./adapters/mistral.js";
+import { openaiAdapter      } from "./adapters/openai.js";
+import { anthropicAdapter   } from "./adapters/anthropic.js";
+import { deepseekAdapter    } from "./adapters/deepseek.js";
+import { xaiAdapter         } from "./adapters/xai.js";
+import { cohereAdapter      } from "./adapters/cohere.js";
+import { huggingfaceAdapter } from "./adapters/huggingface.js";
+import { ModelDiscoveryService } from "./model-discovery.js";
 
-const ALL_ADAPTERS = [openRouterAdapter, geminiAdapter, groqAdapter, cloudflareAdapter, mistralAdapter];
+const ALL_ADAPTERS = [
+  openRouterAdapter, geminiAdapter, groqAdapter, cloudflareAdapter, mistralAdapter,
+  openaiAdapter, anthropicAdapter, deepseekAdapter, xaiAdapter, cohereAdapter, huggingfaceAdapter,
+];
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -186,6 +196,105 @@ const DEFAULT_PROVIDER_SEEDS: InsertAiProviderRegistry[] = [
       general: "mistral-large-latest",
     },
   },
+  {
+    slug: "openai", displayName: "OpenAI",
+    baseUrl: "https://api.openai.com/v1",
+    docsUrl: "https://platform.openai.com/docs",
+    enabled: false, priority: 6,
+    routingStrategy: "round-robin",
+    healthScore: 100, status: "healthy",
+    totalRequests: 0, successCount: 0, failureCount: 0, avgLatencyMs: 0,
+    capabilities: { streaming: true, functionCalling: true, vision: true },
+    defaultModels: {
+      planning: "gpt-4o", "code-gen": "gpt-4o",
+      debugging: "gpt-4o", documentation: "gpt-4o-mini",
+      review: "gpt-4o", verification: "gpt-4o-mini",
+      general: "gpt-4o-mini",
+    },
+  },
+  {
+    slug: "anthropic", displayName: "Anthropic Claude",
+    baseUrl: "https://api.anthropic.com/v1",
+    docsUrl: "https://docs.anthropic.com",
+    enabled: false, priority: 7,
+    routingStrategy: "round-robin",
+    healthScore: 100, status: "healthy",
+    totalRequests: 0, successCount: 0, failureCount: 0, avgLatencyMs: 0,
+    capabilities: { streaming: true, functionCalling: true, vision: true },
+    defaultModels: {
+      planning: "claude-sonnet-4-5", "code-gen": "claude-opus-4-5",
+      debugging: "claude-sonnet-4-5", documentation: "claude-haiku-3-5",
+      review: "claude-sonnet-4-5", verification: "claude-haiku-3-5",
+      general: "claude-haiku-3-5",
+    },
+  },
+  {
+    slug: "deepseek", displayName: "DeepSeek",
+    baseUrl: "https://api.deepseek.com/v1",
+    docsUrl: "https://api-docs.deepseek.com",
+    enabled: false, priority: 8,
+    routingStrategy: "round-robin",
+    healthScore: 100, status: "healthy",
+    totalRequests: 0, successCount: 0, failureCount: 0, avgLatencyMs: 0,
+    capabilities: { streaming: true, functionCalling: false, vision: false },
+    defaultModels: {
+      planning: "deepseek-reasoner", "code-gen": "deepseek-coder",
+      debugging: "deepseek-coder", documentation: "deepseek-chat",
+      review: "deepseek-coder", verification: "deepseek-chat",
+      general: "deepseek-chat",
+    },
+  },
+  {
+    slug: "xai", displayName: "xAI Grok",
+    baseUrl: "https://api.x.ai/v1",
+    docsUrl: "https://docs.x.ai",
+    enabled: false, priority: 9,
+    routingStrategy: "round-robin",
+    healthScore: 100, status: "healthy",
+    totalRequests: 0, successCount: 0, failureCount: 0, avgLatencyMs: 0,
+    capabilities: { streaming: true, functionCalling: true, vision: true },
+    defaultModels: {
+      planning: "grok-3", "code-gen": "grok-3",
+      debugging: "grok-3", documentation: "grok-3-mini",
+      review: "grok-3", verification: "grok-3-mini",
+      general: "grok-3-mini",
+    },
+  },
+  {
+    slug: "cohere", displayName: "Cohere",
+    baseUrl: "https://api.cohere.com/v2",
+    docsUrl: "https://docs.cohere.com",
+    enabled: false, priority: 10,
+    routingStrategy: "round-robin",
+    healthScore: 100, status: "healthy",
+    totalRequests: 0, successCount: 0, failureCount: 0, avgLatencyMs: 0,
+    capabilities: { streaming: true, functionCalling: true, vision: false },
+    defaultModels: {
+      planning: "command-r-plus-08-2024", "code-gen": "command-r-plus-08-2024",
+      debugging: "command-r-plus-08-2024", documentation: "command-r-08-2024",
+      review: "command-r-plus-08-2024", verification: "command-r-08-2024",
+      general: "command-r-08-2024",
+    },
+  },
+  {
+    slug: "huggingface", displayName: "HuggingFace",
+    baseUrl: "https://api-inference.huggingface.co/v1",
+    docsUrl: "https://huggingface.co/docs/api-inference",
+    enabled: false, priority: 11,
+    routingStrategy: "round-robin",
+    healthScore: 100, status: "healthy",
+    totalRequests: 0, successCount: 0, failureCount: 0, avgLatencyMs: 0,
+    capabilities: { streaming: true, functionCalling: false, vision: false },
+    defaultModels: {
+      planning: "meta-llama/Llama-3.3-70B-Instruct",
+      "code-gen": "Qwen/Qwen2.5-Coder-32B-Instruct",
+      debugging: "Qwen/Qwen2.5-Coder-32B-Instruct",
+      documentation: "meta-llama/Llama-3.1-8B-Instruct",
+      review: "meta-llama/Llama-3.3-70B-Instruct",
+      verification: "meta-llama/Llama-3.1-8B-Instruct",
+      general: "meta-llama/Llama-3.1-8B-Instruct",
+    },
+  },
 ];
 
 // ── ProviderManager ────────────────────────────────────────────────────────────
@@ -193,10 +302,17 @@ const DEFAULT_PROVIDER_SEEDS: InsertAiProviderRegistry[] = [
 export class ProviderManager {
   private providers = new Map<string, RuntimeProviderState>();
   private monitor: HealthMonitor;
+  private discovery: ModelDiscoveryService;
   private initialized = false;
 
   constructor() {
-    this.monitor = new HealthMonitor(this.providers);
+    this.monitor   = new HealthMonitor(this.providers);
+    this.discovery = new ModelDiscoveryService(ALL_ADAPTERS, (slug) => {
+      const p = this.providers.get(slug);
+      const firstKey = p?.keys.find(k => k.enabled);
+      if (!firstKey) return undefined;
+      try { return decryptKey(firstKey.keyEncrypted); } catch { return undefined; }
+    });
   }
 
   // ── Initialization ──────────────────────────────────────────────────────────
@@ -210,6 +326,7 @@ export class ProviderManager {
       await this.loadFromDB();
       this.seedEnvKeys();
       this.monitor.start();
+      this.discovery.start();
       const total = [...this.providers.values()].reduce((s, p) => s + p.keys.length, 0);
       console.log(`[ProviderManager] Ready — ${this.providers.size} providers, ${total} keys`);
     } catch (err) {
@@ -696,15 +813,45 @@ export class ProviderManager {
     await this.monitor.runNow();
   }
 
+  // ── Model discovery public API ──────────────────────────────────────────────
+
+  /** Trigger a fresh model discovery scan for all providers. */
+  async discoverModels(): Promise<{ providerSlug: string; count: number }[]> {
+    return this.discovery.discoverAll();
+  }
+
+  /** Get discovered models with optional filtering. */
+  async getDiscoveredModels(opts: {
+    providerSlug?: string;
+    onlyFree?: boolean;
+    category?: string;
+    limit?: number;
+    offset?: number;
+  } = {}) {
+    return this.discovery.getModels({ ...opts, onlyEnabled: true });
+  }
+
+  /** Get the best model for a given task type. */
+  async getBestModel(taskType: string, preferFree = false) {
+    return this.discovery.getBestModelForTask(taskType, preferFree);
+  }
+
+  /** Get info about last discovery run. */
+  getDiscoveryStatus() {
+    return {
+      lastRun: this.discovery.getLastRunTime()?.toISOString() ?? null,
+      isRunning: this.discovery.isRunning(),
+    };
+  }
+
   // ── Private: DB initialization ──────────────────────────────────────────────
 
   private async seedProvidersIfEmpty(): Promise<void> {
-    const existing = await db.select({ slug: aiProviderRegistryTable.slug }).from(aiProviderRegistryTable).limit(1);
-    if (existing.length > 0) return;
-
-    console.log("[ProviderManager] Seeding provider registry…");
+    // Always upsert seeds so newly added providers get registered on next restart.
+    // onConflictDoNothing ensures existing rows are never overwritten.
     for (const seed of DEFAULT_PROVIDER_SEEDS) {
-      await db.insert(aiProviderRegistryTable).values(seed).onConflictDoNothing();
+      await db.insert(aiProviderRegistryTable).values(seed).onConflictDoNothing()
+        .catch(err => console.warn("[ProviderManager] Seed upsert warn:", (err as Error).message));
     }
   }
 
@@ -773,19 +920,14 @@ export class ProviderManager {
   // keyPrefix so they are never double-inserted.
 
   private seedEnvKeys(): void {
-    const slugPrefixMap: Record<string, string> = {
-      openrouter: "OPENROUTER_API_KEY",
-      gemini:     "GEMINI_API_KEY",
-      groq:       "GROQ_API_KEY",
-      cloudflare: "CLOUDFLARE_API_KEY",
-      mistral:    "MISTRAL_API_KEY",
-    };
-
-    // Scan ALL env vars once, bucket them by provider slug
+    // Driven by adapter.envPrefix — no hardcoded slug map needed.
+    // Adding a new adapter automatically picks up its env keys on next restart.
     const envEntries = Object.entries(process.env);
 
-    for (const [slug, envPrefix] of Object.entries(slugPrefixMap)) {
-      const p = this.providers.get(slug);
+    for (const adapter of ALL_ADAPTERS) {
+      const slug      = adapter.slug;
+      const envPrefix = adapter.envPrefix;
+      const p         = this.providers.get(slug);
       if (!p) continue;
 
       // Build a set of key-prefixes already loaded (from DB) to avoid duplicates

@@ -240,4 +240,53 @@ router.post("/:slug/keys/:id/test", async (req, res) => {
   }
 });
 
+// ── Model Discovery endpoints ─────────────────────────────────────────────────
+
+// GET /providers/models — list discovered models with filtering
+router.get("/models", async (req, res) => {
+  try {
+    const { provider, free, category, limit, offset } = req.query as Record<string, string | undefined>;
+    const result = await providerManager.getDiscoveredModels({
+      providerSlug: provider,
+      onlyFree:     free === "true",
+      category,
+      limit:        limit  ? Math.min(Number(limit),  500) : 100,
+      offset:       offset ? Number(offset) : 0,
+    });
+    res.json({ ok: true, data: result.models, total: result.total });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// GET /providers/models/discovery-status — last run metadata
+router.get("/models/discovery-status", async (_req, res) => {
+  try {
+    res.json({ ok: true, data: providerManager.getDiscoveryStatus() });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// GET /providers/models/best — best model for a task
+router.get("/models/best", async (req, res) => {
+  try {
+    const { task, free } = req.query as Record<string, string | undefined>;
+    const model = await providerManager.getBestModel(task ?? "general", free === "true");
+    res.json({ ok: true, data: model });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// POST /providers/models/discover — trigger manual refresh (admin only)
+router.post("/models/discover", requireRole("admin"), async (_req, res) => {
+  try {
+    const results = await providerManager.discoverModels();
+    res.json({ ok: true, data: results });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
+});
+
 export default router;
