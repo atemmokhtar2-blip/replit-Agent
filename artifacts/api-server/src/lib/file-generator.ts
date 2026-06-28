@@ -20,7 +20,12 @@ import { providerManager } from "./provider-manager/index.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-export const PROJECT_DIR_BASE = process.env["PROJECT_FILES_BASE"] ?? "/tmp/projects";
+export const PROJECT_DIR_BASE = process.env["PROJECT_FILES_BASE"] ??
+  (() => {
+    const p = new URL(import.meta.url).pathname;
+    const root = p.slice(0, p.indexOf("/artifacts/"));
+    return root ? `${root}/data/projects` : "/tmp/projects";
+  })();
 const PER_MODEL_TIMEOUT_MS  = 55_000;   // 55 s hard cap per single model call
 const WATCHDOG_INTERVAL_MS  = 30_000;   // alert after 30 s of silence
 const MAX_RETRIES_PER_BATCH = 4;        // max provider switches per batch

@@ -59,6 +59,19 @@ export default defineConfig({
       "/api": {
         target: "http://localhost:8000",
         changeOrigin: true,
+        proxyTimeout: 60_000,
+        timeout: 60_000,
+        configure: (proxy) => {
+          proxy.on("error", (err, _req, res) => {
+            const code = (err as NodeJS.ErrnoException).code;
+            if (code === "ECONNREFUSED" || code === "ECONNRESET") {
+              if (res && !res.headersSent) {
+                res.writeHead(503, { "Content-Type": "application/json" });
+                res.end(JSON.stringify({ error: "Server is starting up, please try again in a moment." }));
+              }
+            }
+          });
+        },
       },
     },
   },

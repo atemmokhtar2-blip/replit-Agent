@@ -154,7 +154,12 @@ export type ExecStageId = typeof EXEC_STAGES[number]["id"];
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const MAX_FIX_ITERATIONS = 3;
-const PROJECT_DIR_BASE = "/tmp/projects";
+const PROJECT_DIR_BASE = process.env["PROJECT_FILES_BASE"] ??
+  (() => {
+    const p = new URL(import.meta.url).pathname;
+    const root = p.slice(0, p.indexOf("/artifacts/"));
+    return root ? `${root}/data/projects` : "/tmp/projects";
+  })();
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
