@@ -9,6 +9,60 @@
 import { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
+// ── Copy Button ────────────────────────────────────────────────────────────────
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {}
+  };
+
+  return (
+    <button
+      onClick={handleCopy}
+      title={copied ? "Copied!" : "Copy"}
+      className="group relative flex items-center justify-center h-6 w-6 rounded-md transition-all duration-150 hover:bg-white/8 flex-shrink-0"
+    >
+      <AnimatePresence mode="wait" initial={false}>
+        {copied ? (
+          <motion.svg
+            key="check"
+            initial={{ scale: 0.5, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.5, opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            width="11" height="11" viewBox="0 0 12 12" fill="none"
+            stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+            className="text-emerald-400"
+          >
+            <polyline points="1.5,6 4.5,9.5 10.5,2.5" />
+          </motion.svg>
+        ) : (
+          <motion.svg
+            key="clipboard"
+            initial={{ scale: 0.5, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.5, opacity: 0 }}
+            transition={{ duration: 0.15 }}
+            width="11" height="11" viewBox="0 0 16 16" fill="none"
+            stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"
+            className="text-muted-foreground/35 group-hover:text-muted-foreground/65 transition-colors duration-150"
+          >
+            <rect x="5" y="4" width="8" height="10" rx="1.5" />
+            <path d="M5 6H3.5A1.5 1.5 0 0 0 2 7.5v6A1.5 1.5 0 0 0 3.5 15H9a1.5 1.5 0 0 0 1.5-1.5V14" />
+          </motion.svg>
+        )}
+      </AnimatePresence>
+    </button>
+  );
+}
+
 // ── Types ──────────────────────────────────────────────────────────────────────
 
 export type CardType =
@@ -468,10 +522,11 @@ export function ExecutionCard({ card, onToggleExpand }: ExecutionCardProps) {
           </div>
         </div>
 
-        {/* Status + Duration */}
+        {/* Status + Duration + Copy */}
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="text-[10px] text-muted-foreground/40 font-mono tabular-nums">{duration}</span>
           <StatusBadge status={status} />
+          {content && <CopyButton text={content} />}
           <motion.svg
             width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"
             className="text-muted-foreground/40"
