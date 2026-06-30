@@ -35,7 +35,7 @@ app.use("/api", router);
 // ── Static file serving (production) ──────────────────────────────────────────
 // Serve the built Vite frontend from the API server when NODE_ENV=production.
 // This lets a single process on port 5000 handle both /api and the SPA.
-if (process.env.NODE_ENV === "production") {
+if (process.env.NODE_ENV === "production" && !process.env.VERCEL) {
   const clientDist = path.resolve(
     path.dirname(new URL(import.meta.url).pathname),
     "../../ai-agent/dist/public",

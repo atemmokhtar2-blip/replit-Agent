@@ -1,11 +1,11 @@
 {
   "version": 2,
-  "buildCommand": "pnpm run build",
-  "outputDirectory": "dist/public",
+  "buildCommand": "pnpm --filter @workspace/ai-agent run build",
+  "outputDirectory": "artifacts/ai-agent/dist/public",
   "installCommand": "pnpm install --frozen-lockfile",
   "framework": null,
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/$1" }
+    { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [
     {
