@@ -1,0 +1,32 @@
+{
+  "version": 2,
+  "buildCommand": "pnpm run build",
+  "outputDirectory": "artifacts/ai-agent/dist/public",
+  "installCommand": "pnpm install --frozen-lockfile",
+  "framework": null,
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" }
+  ],
+  "functions": {
+    "artifacts/api-server/dist/index.mjs": {
+      "maxDuration": 30
+    }
+  },
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-store" }
+      ]
+    },
+    {
+      "source": "/assets/(.*)",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    }
+  ]
+}
