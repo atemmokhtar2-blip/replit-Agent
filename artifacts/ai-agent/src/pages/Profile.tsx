@@ -46,7 +46,7 @@ function ProviderBadge({ provider }: { provider: string | null | undefined }) {
     : p;
   const color =
     p === "google" ? "bg-blue-500/10 text-blue-500 border-blue-500/30"
-    : p === "github" ? "bg-gray-500/10 text-gray-400 border-gray-500/30"
+    : p === "github" ? "bg-muted/60 text-muted-foreground border-border"
     : "bg-muted text-muted-foreground border-border";
   return (
     <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-medium border ${color}`}>

@@ -104,7 +104,7 @@ const CAT_COLORS: Record<string, string> = {
   vision:          "bg-pink-500/15 text-pink-400 border-pink-500/30",
   "long-context":  "bg-orange-500/15 text-orange-400 border-orange-500/30",
   multimodal:      "bg-indigo-500/15 text-indigo-400 border-indigo-500/30",
-  general:         "bg-zinc-500/15 text-zinc-400 border-zinc-500/30",
+  general:         "bg-muted/60 text-muted-foreground border-border",
 };
 
 function fmtPrice(price?: number): string {
@@ -134,7 +134,7 @@ function relTime(iso?: string | null): string {
 
 function CapBadge({ icon, label, active }: { icon: React.ReactNode; label: string; active: boolean }) {
   return (
-    <span title={label} className={`inline-flex items-center gap-0.5 text-xs ${active ? "text-zinc-300" : "text-zinc-700"}`}>
+    <span title={label} className={`inline-flex items-center gap-0.5 text-xs ${active ? "text-foreground/80" : "text-muted-foreground/50"}`}>
       {icon}
     </span>
   );
@@ -144,13 +144,13 @@ function CapBadge({ icon, label, active }: { icon: React.ReactNode; label: strin
 
 function ModelRow({ m, expanded, onToggle }: { m: DiscoveredModel; expanded: boolean; onToggle: () => void }) {
   const score = m.rankScore ?? 0;
-  const scoreColor = score >= 70 ? "text-emerald-400" : score >= 50 ? "text-amber-400" : "text-zinc-400";
+  const scoreColor = score >= 70 ? "text-emerald-400" : score >= 50 ? "text-amber-400" : "text-muted-foreground";
 
   return (
-    <div className={`rounded-lg border border-white/5 bg-white/3 transition-all ${expanded ? "border-violet-500/30" : ""}`}>
+    <div className={`rounded-lg border border-border/50 bg-muted/10 transition-all ${expanded ? "border-violet-500/30" : ""}`}>
       <button
         onClick={onToggle}
-        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-white/3 rounded-lg"
+        className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-muted/10 rounded-lg"
       >
         {/* Provider dot */}
         <div className="w-2 h-2 rounded-full bg-violet-500/60 shrink-0" />
@@ -161,12 +161,12 @@ function ModelRow({ m, expanded, onToggle }: { m: DiscoveredModel; expanded: boo
             <span className="text-sm font-medium text-white truncate max-w-[260px]" title={m.modelId}>
               {m.displayName !== m.modelId ? m.displayName : m.modelId.split("/").pop()}
             </span>
-            <span className="text-xs text-zinc-600 font-mono truncate max-w-[180px]" title={m.modelId}>
+            <span className="text-xs text-muted-foreground/70 font-mono truncate max-w-[180px]" title={m.modelId}>
               {m.providerSlug}/{m.modelId.split("/").pop() ?? m.modelId}
             </span>
             {/* Category tags */}
             {m.categories.slice(0, 3).map(c => (
-              <Badge key={c} variant="outline" className={`text-[10px] h-4 px-1.5 ${CAT_COLORS[c] ?? "bg-zinc-500/15 text-zinc-400 border-zinc-500/30"}`}>
+              <Badge key={c} variant="outline" className={`text-[10px] h-4 px-1.5 ${CAT_COLORS[c] ?? "bg-muted/60 text-muted-foreground border-border"}`}>
                 {CATEGORY_LABELS[c] ?? c}
               </Badge>
             ))}
@@ -182,13 +182,13 @@ function ModelRow({ m, expanded, onToggle }: { m: DiscoveredModel; expanded: boo
         </div>
 
         {/* Context */}
-        <div className="w-16 text-right text-xs text-zinc-500 shrink-0">{fmtCtx(m.contextLength)}</div>
+        <div className="w-16 text-right text-xs text-muted-foreground shrink-0">{fmtCtx(m.contextLength)}</div>
 
         {/* Price */}
         <div className="w-20 text-right text-xs shrink-0">
           {m.isFree
             ? <span className="text-emerald-400 font-medium">Free</span>
-            : <span className="text-zinc-400">{fmtPrice(m.inputPricePer1M)}</span>
+            : <span className="text-muted-foreground">{fmtPrice(m.inputPricePer1M)}</span>
           }
         </div>
 
@@ -196,13 +196,13 @@ function ModelRow({ m, expanded, onToggle }: { m: DiscoveredModel; expanded: boo
         <div className={`w-12 text-right text-xs font-mono shrink-0 ${scoreColor}`}>{Math.round(score)}</div>
 
         {/* Expand icon */}
-        {expanded ? <ChevronUp className="h-3.5 w-3.5 text-zinc-500 shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 text-zinc-500 shrink-0" />}
+        {expanded ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
       </button>
 
       {expanded && (
         <div className="px-4 pb-4 space-y-3">
           {m.description && (
-            <p className="text-xs text-zinc-400 leading-relaxed">{m.description}</p>
+            <p className="text-xs text-muted-foreground leading-relaxed">{m.description}</p>
           )}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             {[
@@ -211,14 +211,14 @@ function ModelRow({ m, expanded, onToggle }: { m: DiscoveredModel; expanded: boo
               { label: "Output Price", value: fmtPrice(m.outputPricePer1M) },
               { label: "Rank Score",   value: Math.round(m.rankScore).toString() },
             ].map(({ label, value }) => (
-              <div key={label} className="rounded-md bg-white/4 px-2.5 py-2">
-                <p className="text-[10px] text-zinc-500 mb-0.5">{label}</p>
+              <div key={label} className="rounded-md bg-muted/15 px-2.5 py-2">
+                <p className="text-[10px] text-muted-foreground mb-0.5">{label}</p>
                 <p className="text-sm font-medium text-white">{value}</p>
               </div>
             ))}
           </div>
-          <div className="flex items-center gap-4 text-xs text-zinc-600">
-            <span>ID: <code className="text-zinc-400">{m.modelId}</code></span>
+          <div className="flex items-center gap-4 text-xs text-muted-foreground/70">
+            <span>ID: <code className="text-muted-foreground">{m.modelId}</code></span>
             <span>Discovered {relTime(m.lastDiscoveredAt)}</span>
           </div>
         </div>
@@ -277,13 +277,13 @@ export default function AIModelsPage() {
             <Sparkles className="h-6 w-6 text-violet-400" />
             AI Model Discovery
           </h1>
-          <p className="text-sm text-zinc-400 mt-1">
+          <p className="text-sm text-muted-foreground mt-1">
             Discovered models across all configured providers — ranked by capability and cost.
           </p>
         </div>
         <div className="flex items-center gap-2">
           {status && (
-            <span className="text-xs text-zinc-500">
+            <span className="text-xs text-muted-foreground">
               {status.isRunning
                 ? <><RefreshCw className="inline h-3 w-3 mr-1 animate-spin" />Scanning…</>
                 : `Updated ${relTime(status.lastRun)}`}
@@ -309,11 +309,11 @@ export default function AIModelsPage() {
           { label: "Providers",       value: providerCounts.length.toString(), icon: <Cpu className="h-4 w-4 text-blue-400" /> },
           { label: "Last Discovery",  value: relTime(status?.lastRun),   icon: <Clock className="h-4 w-4 text-amber-400" />   },
         ].map(({ label, value, icon }) => (
-          <Card key={label} className="border-white/8 bg-zinc-900/60">
+          <Card key={label} className="border-border bg-card/60">
             <CardContent className="p-4">
               <div className="flex items-center gap-2 mb-1">
                 {icon}
-                <p className="text-xs text-zinc-500">{label}</p>
+                <p className="text-xs text-muted-foreground">{label}</p>
               </div>
               <p className="text-2xl font-bold text-white">{value}</p>
             </CardContent>
@@ -331,11 +331,11 @@ export default function AIModelsPage() {
               className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs border transition-all ${
                 provider === slug
                   ? "bg-violet-500/20 border-violet-500/40 text-violet-300"
-                  : "bg-white/4 border-white/8 text-zinc-400 hover:text-zinc-200"
+                  : "bg-muted/15 border-border text-muted-foreground hover:text-foreground/90"
               }`}
             >
               <span>{PROVIDER_LABELS[slug] ?? slug}</span>
-              <span className="text-zinc-500">{ms.length}</span>
+              <span className="text-muted-foreground">{ms.length}</span>
             </button>
           ))}
         </div>
@@ -344,12 +344,12 @@ export default function AIModelsPage() {
       {/* Filters */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500" />
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input
             placeholder="Search models…"
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="pl-8 h-8 w-56 text-sm bg-zinc-900 border-white/10"
+            className="pl-8 h-8 w-56 text-sm bg-card border-white/10"
           />
         </div>
 
@@ -372,7 +372,7 @@ export default function AIModelsPage() {
           className={`inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs border transition-all ${
             onlyFree
               ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
-              : "bg-white/4 border-white/8 text-zinc-400 hover:text-zinc-200"
+              : "bg-muted/15 border-border text-muted-foreground hover:text-foreground/90"
           }`}
         >
           <DollarSign className="h-3 w-3" />
@@ -381,19 +381,19 @@ export default function AIModelsPage() {
 
         {(search || provider !== "all" || category !== "all" || onlyFree) && (
           <button
-            className="text-xs text-zinc-500 hover:text-zinc-300"
+            className="text-xs text-muted-foreground hover:text-foreground/80"
             onClick={() => { setSearch(""); setProvider("all"); setCategory("all"); setOnlyFree(false); }}
           >
             Clear filters
           </button>
         )}
 
-        <span className="ml-auto text-xs text-zinc-500">{models.length} models shown</span>
+        <span className="ml-auto text-xs text-muted-foreground">{models.length} models shown</span>
       </div>
 
       {/* Table header */}
       {models.length > 0 && (
-        <div className="flex items-center gap-3 px-4 text-xs text-zinc-600 select-none">
+        <div className="flex items-center gap-3 px-4 text-xs text-muted-foreground/70 select-none">
           <div className="w-2 shrink-0" />
           <div className="flex-1">Model</div>
           <div className="flex items-center gap-1.5 shrink-0 w-20">
@@ -409,7 +409,7 @@ export default function AIModelsPage() {
       {/* Model list */}
       <div className="space-y-1.5">
         {isLoading ? (
-          <div className="flex items-center justify-center py-20 text-zinc-500">
+          <div className="flex items-center justify-center py-20 text-muted-foreground">
             <RefreshCw className="h-5 w-5 animate-spin mr-2" />Loading models…
           </div>
         ) : error ? (
@@ -418,9 +418,9 @@ export default function AIModelsPage() {
           </div>
         ) : models.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-20 gap-4">
-            <Sparkles className="h-10 w-10 text-zinc-700" />
-            <p className="text-zinc-500 text-sm">No models discovered yet.</p>
-            <p className="text-zinc-600 text-xs">Configure a provider API key and click Refresh to discover models.</p>
+            <Sparkles className="h-10 w-10 text-muted-foreground/50" />
+            <p className="text-muted-foreground text-sm">No models discovered yet.</p>
+            <p className="text-muted-foreground/70 text-xs">Configure a provider API key and click Refresh to discover models.</p>
             <Button size="sm" onClick={() => discover.mutate()} disabled={discover.isPending}>
               <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${discover.isPending ? "animate-spin" : ""}`} />
               Discover Now
@@ -440,7 +440,7 @@ export default function AIModelsPage() {
 
       {/* Legend */}
       {models.length > 0 && (
-        <div className="flex items-center gap-4 text-[11px] text-zinc-600 pt-2 border-t border-white/5">
+        <div className="flex items-center gap-4 text-[11px] text-muted-foreground/70 pt-2 border-t border-border/50">
           <span className="flex items-center gap-1"><Eye className="h-3 w-3" /> Vision</span>
           <span className="flex items-center gap-1"><Wrench className="h-3 w-3" /> Tools/Function Calling</span>
           <span className="flex items-center gap-1"><Brain className="h-3 w-3" /> Reasoning</span>

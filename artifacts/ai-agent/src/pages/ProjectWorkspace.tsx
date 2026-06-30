@@ -251,13 +251,13 @@ function extBadge(ext: string): { label: string; cls: string } {
     css:  { label: "CS",  cls: "bg-pink-500/20 text-pink-400" },
     html: { label: "HT",  cls: "bg-orange-500/20 text-orange-400" },
     json: { label: "{}",  cls: "bg-amber-500/20 text-amber-400" },
-    md:   { label: "MD",  cls: "bg-zinc-500/20 text-zinc-400" },
+    md:   { label: "MD",  cls: "bg-muted/40 text-muted-foreground" },
     sql:  { label: "DB",  cls: "bg-blue-500/20 text-blue-400" },
     py:   { label: "PY",  cls: "bg-green-500/20 text-green-400" },
     sh:   { label: "SH",  cls: "bg-emerald-500/20 text-emerald-400" },
     env:  { label: "EN",  cls: "bg-orange-500/20 text-orange-400" },
   };
-  return m[ext?.toLowerCase()] ?? { label: "FI", cls: "bg-zinc-600/20 text-zinc-400" };
+  return m[ext?.toLowerCase()] ?? { label: "FI", cls: "bg-muted/30 text-muted-foreground" };
 }
 
 function humanSize(b: number) {

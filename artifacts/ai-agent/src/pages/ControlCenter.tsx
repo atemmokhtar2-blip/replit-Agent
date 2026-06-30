@@ -92,11 +92,11 @@ function StatusBadge({ status }: { status: string }) {
     available: { color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20", dot: "bg-emerald-400", label: "Live" },
     degraded:  { color: "bg-yellow-500/10  text-yellow-400  border-yellow-500/20",  dot: "bg-yellow-400",  label: "Degraded" },
     offline:   { color: "bg-red-500/10     text-red-400     border-red-500/20",     dot: "bg-red-400",     label: "Offline" },
-    unknown:   { color: "bg-zinc-500/10    text-zinc-400    border-zinc-500/20",    dot: "bg-zinc-400",    label: "Unknown" },
+    unknown:   { color: "bg-muted/60 text-muted-foreground border-border",           dot: "bg-muted-foreground", label: "Unknown" },
     completed: { color: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20", dot: "bg-emerald-400", label: "Done" },
     failed:    { color: "bg-red-500/10     text-red-400     border-red-500/20",     dot: "bg-red-400",     label: "Failed" },
     running:   { color: "bg-blue-500/10    text-blue-400    border-blue-500/20",    dot: "bg-blue-400",    label: "Running" },
-    pending:   { color: "bg-zinc-500/10    text-zinc-400    border-zinc-500/20",    dot: "bg-zinc-400",    label: "Pending" },
+    pending:   { color: "bg-muted/60 text-muted-foreground border-border",           dot: "bg-muted-foreground", label: "Pending" },
   };
   const s = map[status] ?? map["unknown"]!;
   return (
@@ -190,17 +190,17 @@ export default function ControlCenter() {
   ];
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
+    <div className="min-h-screen bg-background text-foreground">
       {/* Header */}
-      <div className="border-b border-zinc-800 px-6 py-5">
+      <div className="border-b border-border px-6 py-5">
         <div className="max-w-7xl mx-auto">
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-xl font-semibold tracking-tight">AI Control Center</h1>
-              <p className="text-sm text-zinc-500 mt-0.5">Router intelligence · Model registry · Health monitoring · Execution timeline</p>
+              <h1 className="text-xl font-semibold tracking-tight text-foreground">AI Control Center</h1>
+              <p className="text-sm text-muted-foreground mt-0.5">Router intelligence · Model registry · Health monitoring · Execution timeline</p>
             </div>
             <div className="flex items-center gap-3">
-              <span className="text-xs text-zinc-500">
+              <span className="text-xs text-muted-foreground">
                 {activeModels}/{models.length} models active
               </span>
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -214,8 +214,8 @@ export default function ControlCenter() {
                 onClick={() => setActiveTab(t.id)}
                 className={`px-4 py-1.5 rounded-md text-sm font-medium transition-colors ${
                   activeTab === t.id
-                    ? "bg-zinc-800 text-zinc-100"
-                    : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800/50"
+                    ? "bg-muted text-foreground"
+                    : "text-muted-foreground hover:text-foreground hover:bg-muted/50"
                 }`}
               >
                 {t.label}
@@ -246,23 +246,23 @@ export default function ControlCenter() {
                     { label: "Avg Success",     value: `${avgSuccessRate.toFixed(1)}%`,   sub: "across all models" },
                     { label: "Total Requests",  value: totalRequests.toLocaleString(),     sub: "since server start" },
                   ].map((stat) => (
-                    <div key={stat.label} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
-                      <p className="text-sm text-zinc-500">{stat.label}</p>
-                      <p className="text-2xl font-bold text-zinc-100 mt-1">{stat.value}</p>
-                      <p className="text-xs text-zinc-600 mt-0.5">{stat.sub}</p>
+                    <div key={stat.label} className="seven-card rounded-xl p-4">
+                      <p className="text-sm text-muted-foreground">{stat.label}</p>
+                      <p className="text-2xl font-bold text-foreground mt-1">{stat.value}</p>
+                      <p className="text-xs text-muted-foreground/70 mt-0.5">{stat.sub}</p>
                     </div>
                   ))}
                 </div>
 
                 {/* Health summary */}
                 {Object.keys(healthSummary).length > 0 && (
-                  <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
-                    <h3 className="text-sm font-medium text-zinc-400 mb-3">Model Health Summary</h3>
+                  <div className="seven-card rounded-xl p-5">
+                    <h3 className="text-sm font-medium text-muted-foreground mb-3">Model Health Summary</h3>
                     <div className="flex gap-4 flex-wrap">
                       {Object.entries(healthSummary).map(([status, count]) => (
                         <div key={status} className="flex items-center gap-2">
                           <StatusBadge status={status} />
-                          <span className="text-zinc-400 text-sm font-mono">{count}</span>
+                          <span className="text-muted-foreground text-sm font-mono">{count}</span>
                         </div>
                       ))}
                     </div>
@@ -271,17 +271,17 @@ export default function ControlCenter() {
 
                 {/* Recent executions */}
                 {executions.length > 0 && (
-                  <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
-                    <h3 className="text-sm font-medium text-zinc-400 mb-3">Recent Executions</h3>
+                  <div className="seven-card rounded-xl p-5">
+                    <h3 className="text-sm font-medium text-muted-foreground mb-3">Recent Executions</h3>
                     <div className="space-y-2">
                       {executions.slice(0, 5).map((e) => (
                         <div key={e.id} className="flex items-center gap-3 text-sm">
                           <StatusBadge status={e.status} />
-                          <span className="text-zinc-300 font-medium w-20 shrink-0">{e.agent_type}</span>
-                          <span className="text-zinc-500 w-20 shrink-0">{e.task_type}</span>
-                          <span className="text-zinc-600 truncate flex-1">{e.request_summary ?? "—"}</span>
+                          <span className="text-foreground/80 font-medium w-20 shrink-0">{e.agent_type}</span>
+                          <span className="text-muted-foreground w-20 shrink-0">{e.task_type}</span>
+                          <span className="text-muted-foreground/60 truncate flex-1">{e.request_summary ?? "—"}</span>
                           {e.latency_ms != null && (
-                            <span className="text-zinc-500 font-mono text-xs shrink-0">{e.latency_ms}ms</span>
+                            <span className="text-muted-foreground font-mono text-xs shrink-0">{e.latency_ms}ms</span>
                           )}
                           {e.failovers > 0 && (
                             <span className="text-yellow-500 text-xs shrink-0">{e.failovers}↷</span>
@@ -298,35 +298,35 @@ export default function ControlCenter() {
             {activeTab === "models" && (
               <div className="space-y-3">
                 <div className="flex items-center justify-between mb-1">
-                  <p className="text-sm text-zinc-500">{models.length} models in registry</p>
-                  <p className="text-xs text-zinc-600">Toggle to enable/disable routing</p>
+                  <p className="text-sm text-muted-foreground">{models.length} models in registry</p>
+                  <p className="text-xs text-muted-foreground/60">Toggle to enable/disable routing</p>
                 </div>
                 {modelsLoading ? (
-                  <div className="text-zinc-500 text-sm py-8 text-center">Loading models…</div>
+                  <div className="text-muted-foreground text-sm py-8 text-center">Loading models…</div>
                 ) : (
                   models.map((model) => (
-                    <div key={model.id} className={`bg-zinc-900 border rounded-xl p-4 transition-opacity ${model.enabled ? "border-zinc-800 opacity-100" : "border-zinc-800/50 opacity-60"}`}>
+                    <div key={model.id} className={`seven-card rounded-xl p-4 transition-opacity ${model.enabled ? "opacity-100" : "opacity-60"}`}>
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3 min-w-0">
                           <div className="shrink-0">
                             <StatusBadge status={model.status} />
                           </div>
                           <div className="min-w-0">
-                            <p className="text-sm font-medium text-zinc-200 truncate">{model.name}</p>
-                            <p className="text-xs text-zinc-500 font-mono truncate">{model.model_id}</p>
+                            <p className="text-sm font-medium text-foreground/90 truncate">{model.name}</p>
+                            <p className="text-xs text-muted-foreground font-mono truncate">{model.model_id}</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-4 shrink-0 ml-4">
-                          <div className="hidden sm:flex items-center gap-4 text-xs text-zinc-500">
+                          <div className="hidden sm:flex items-center gap-4 text-xs text-muted-foreground">
                             <span title="Avg response time">⏱ {model.health.avg_response_ms > 0 ? `${model.health.avg_response_ms}ms` : "—"}</span>
                             <span title="Requests"># {model.health.total_requests}</span>
-                            <span title="Success rate" className={model.health.success_rate < 70 ? "text-red-400" : "text-zinc-500"}>
+                            <span title="Success rate" className={model.health.success_rate < 70 ? "text-red-400" : "text-muted-foreground"}>
                               ✓ {model.health.success_rate.toFixed(0)}%
                             </span>
                           </div>
-                          <div className="flex flex-wrap gap-1 max-w-[120px] hidden sm:flex">
+                          <div className="hidden sm:flex flex-wrap gap-1 max-w-[120px]">
                             {model.task_affinity.slice(0, 2).map((t) => (
-                              <span key={t} className="px-1.5 py-0.5 bg-zinc-800 text-zinc-500 text-xs rounded">{t}</span>
+                              <span key={t} className="px-1.5 py-0.5 bg-muted text-muted-foreground text-xs rounded">{t}</span>
                             ))}
                           </div>
                           {model.is_free && (
@@ -335,8 +335,8 @@ export default function ControlCenter() {
                           <button
                             onClick={() => toggleModel.mutate({ id: model.id, enabled: !model.enabled })}
                             disabled={toggleModel.isPending}
-                            className={`relative w-10 h-5.5 rounded-full transition-colors shrink-0 ${model.enabled ? "bg-blue-600" : "bg-zinc-700"}`}
-                            style={{ minWidth: "2.5rem", height: "1.375rem" }}
+                            className={`relative rounded-full transition-colors shrink-0 ${model.enabled ? "bg-primary" : "bg-muted"}`}
+                            style={{ minWidth: "2.5rem", width: "2.5rem", height: "1.375rem" }}
                             title={model.enabled ? "Disable" : "Enable"}
                           >
                             <span
@@ -355,34 +355,34 @@ export default function ControlCenter() {
             {activeTab === "agents" && (
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                 {agentsLoading ? (
-                  <div className="col-span-3 text-zinc-500 text-sm py-8 text-center">Loading agents…</div>
+                  <div className="col-span-3 text-muted-foreground text-sm py-8 text-center">Loading agents…</div>
                 ) : (
                   agents.map((agent) => (
-                    <div key={agent.agent_type} className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+                    <div key={agent.agent_type} className="seven-card rounded-xl p-5">
                       <div className="flex items-start gap-3 mb-3">
-                        <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${AGENT_COLORS[agent.agent_type] ?? "from-zinc-600 to-zinc-700"} flex items-center justify-center text-xl shrink-0`}>
+                        <div className={`w-10 h-10 rounded-lg bg-gradient-to-br ${AGENT_COLORS[agent.agent_type] ?? "from-muted to-muted"} flex items-center justify-center text-xl shrink-0`}>
                           {AGENT_ICONS[agent.agent_type] ?? "🤖"}
                         </div>
                         <div>
-                          <p className="text-sm font-semibold text-zinc-200">{agent.name} Agent</p>
-                          <p className="text-xs text-zinc-500 mt-0.5 leading-relaxed">{agent.description}</p>
+                          <p className="text-sm font-semibold text-foreground/90">{agent.name} Agent</p>
+                          <p className="text-xs text-muted-foreground mt-0.5 leading-relaxed">{agent.description}</p>
                         </div>
                       </div>
                       <div className="space-y-2">
                         <div>
-                          <p className="text-xs text-zinc-600 mb-1">Handles</p>
+                          <p className="text-xs text-muted-foreground/60 mb-1">Handles</p>
                           <div className="flex flex-wrap gap-1">
                             {agent.supported_task_types.map((t) => (
-                              <span key={t} className="px-1.5 py-0.5 bg-zinc-800 text-zinc-400 text-xs rounded">{t}</span>
+                              <span key={t} className="px-1.5 py-0.5 bg-muted text-muted-foreground text-xs rounded">{t}</span>
                             ))}
                           </div>
                         </div>
                         <div>
-                          <p className="text-xs text-zinc-600 mb-1">Preferred models</p>
+                          <p className="text-xs text-muted-foreground/60 mb-1">Preferred models</p>
                           <div className="space-y-1">
                             {agent.preferred_models.slice(0, 2).map((m) => (
                               <div key={m.id} className="flex items-center justify-between">
-                                <p className="text-xs text-zinc-400 truncate">{m.name}</p>
+                                <p className="text-xs text-muted-foreground truncate">{m.name}</p>
                                 <StatusBadge status={m.status} />
                               </div>
                             ))}
@@ -400,21 +400,21 @@ export default function ControlCenter() {
               <div className="space-y-3">
                 <div className="flex items-center gap-3 mb-4 flex-wrap">
                   {Object.entries(healthSummary).map(([status, count]) => (
-                    <div key={status} className="flex items-center gap-2 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2">
+                    <div key={status} className="flex items-center gap-2 seven-card rounded-lg px-3 py-2">
                       <StatusBadge status={status} />
-                      <span className="text-zinc-300 text-sm font-semibold">{count}</span>
+                      <span className="text-foreground/80 text-sm font-semibold">{count}</span>
                     </div>
                   ))}
                 </div>
                 {health.map((h) => (
-                  <div key={h.registry_entry_id} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+                  <div key={h.registry_entry_id} className="seven-card rounded-xl p-4">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-3">
                         <StatusBadge status={h.status} />
-                        <p className="text-sm font-medium text-zinc-200">{h.name}</p>
-                        <p className="text-xs text-zinc-500">{h.provider_slug}</p>
+                        <p className="text-sm font-medium text-foreground/90">{h.name}</p>
+                        <p className="text-xs text-muted-foreground">{h.provider_slug}</p>
                       </div>
-                      <div className="flex items-center gap-4 text-xs text-zinc-500">
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
                         <span title="Active requests" className={h.active_requests > 0 ? "text-blue-400" : ""}>
                           {h.active_requests > 0 ? `${h.active_requests} active` : "idle"}
                         </span>
@@ -424,26 +424,26 @@ export default function ControlCenter() {
                     {h.total_requests > 0 && (
                       <div className="grid grid-cols-3 gap-4 mt-3">
                         <div>
-                          <p className="text-xs text-zinc-600">Success rate</p>
+                          <p className="text-xs text-muted-foreground/60">Success rate</p>
                           <div className="flex items-center gap-2 mt-1">
-                            <div className="flex-1 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                            <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
                               <div
                                 className={`h-full rounded-full ${h.success_rate >= 80 ? "bg-emerald-500" : h.success_rate >= 50 ? "bg-yellow-500" : "bg-red-500"}`}
                                 style={{ width: `${h.success_rate}%` }}
                               />
                             </div>
-                            <p className="text-xs text-zinc-400 w-10 shrink-0">{h.success_rate.toFixed(0)}%</p>
+                            <p className="text-xs text-muted-foreground w-10 shrink-0">{h.success_rate.toFixed(0)}%</p>
                           </div>
                         </div>
                         <div>
-                          <p className="text-xs text-zinc-600">Avg response</p>
-                          <p className="text-sm font-mono text-zinc-300 mt-1">
+                          <p className="text-xs text-muted-foreground/60">Avg response</p>
+                          <p className="text-sm font-mono text-foreground/80 mt-1">
                             {h.avg_response_ms > 0 ? `${h.avg_response_ms}ms` : "—"}
                           </p>
                         </div>
                         <div>
-                          <p className="text-xs text-zinc-600">Last activity</p>
-                          <p className="text-xs text-zinc-400 mt-1">
+                          <p className="text-xs text-muted-foreground/60">Last activity</p>
+                          <p className="text-xs text-muted-foreground mt-1">
                             {h.last_success_at
                               ? new Date(h.last_success_at).toLocaleTimeString()
                               : "—"}
@@ -460,26 +460,26 @@ export default function ControlCenter() {
             {activeTab === "executions" && (
               <div className="space-y-2">
                 <div className="flex items-center justify-between mb-3">
-                  <p className="text-sm text-zinc-500">Last {executions.length} executions</p>
-                  <p className="text-xs text-zinc-600">Auto-refreshes every 10s</p>
+                  <p className="text-sm text-muted-foreground">Last {executions.length} executions</p>
+                  <p className="text-xs text-muted-foreground/60">Auto-refreshes every 10s</p>
                 </div>
                 {executions.length === 0 ? (
-                  <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-8 text-center">
-                    <p className="text-zinc-500 text-sm">No executions yet.</p>
-                    <p className="text-zinc-600 text-xs mt-1">Send a message in the AI Chat to see routing telemetry here.</p>
+                  <div className="seven-card rounded-xl p-8 text-center">
+                    <p className="text-muted-foreground text-sm">No executions yet.</p>
+                    <p className="text-muted-foreground/60 text-xs mt-1">Send a message in the AI Chat to see routing telemetry here.</p>
                   </div>
                 ) : (
                   executions.map((e) => (
-                    <div key={e.id} className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+                    <div key={e.id} className="seven-card rounded-xl p-4">
                       <div className="flex items-center gap-3 mb-1">
                         <StatusBadge status={e.status} />
-                        <span className={`text-xs font-semibold px-1.5 py-0.5 rounded bg-gradient-to-r ${AGENT_COLORS[e.agent_type] ?? "from-zinc-600 to-zinc-700"} bg-clip-text text-transparent border border-zinc-700`}>
+                        <span className={`text-xs font-semibold px-1.5 py-0.5 rounded bg-gradient-to-r ${AGENT_COLORS[e.agent_type] ?? "from-muted to-muted"} bg-clip-text text-transparent border border-border`}>
                           {e.agent_type}
                         </span>
-                        <span className="text-xs text-zinc-500">{e.task_type}</span>
+                        <span className="text-xs text-muted-foreground">{e.task_type}</span>
                         <span className="flex-1" />
                         {e.latency_ms != null && (
-                          <span className="text-xs font-mono text-zinc-500">{e.latency_ms}ms</span>
+                          <span className="text-xs font-mono text-muted-foreground">{e.latency_ms}ms</span>
                         )}
                         {e.failovers > 0 && (
                           <span className="text-xs text-yellow-500" title={`${e.failovers} failover(s)`}>↷{e.failovers}</span>
@@ -489,9 +489,9 @@ export default function ControlCenter() {
                         )}
                       </div>
                       {e.request_summary && (
-                        <p className="text-xs text-zinc-500 truncate mt-1">{e.request_summary}</p>
+                        <p className="text-xs text-muted-foreground truncate mt-1">{e.request_summary}</p>
                       )}
-                      <div className="flex items-center gap-3 mt-2 text-xs text-zinc-600">
+                      <div className="flex items-center gap-3 mt-2 text-xs text-muted-foreground/60">
                         <span className="font-mono truncate">{e.model_id}</span>
                         <span>·</span>
                         <span>{new Date(e.started_at).toLocaleTimeString()}</span>

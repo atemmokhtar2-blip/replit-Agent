@@ -86,7 +86,7 @@ function ProviderStatusBadge({ status }: { status: ProviderStatus }) {
     healthy:   { label: "Healthy",   icon: <CheckCircle2 className="h-3 w-3" />, cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
     degraded:  { label: "Degraded",  icon: <AlertTriangle className="h-3 w-3" />, cls: "bg-amber-500/15 text-amber-400 border-amber-500/30" },
     unhealthy: { label: "Unhealthy", icon: <XCircle className="h-3 w-3" />,      cls: "bg-red-500/15 text-red-400 border-red-500/30" },
-    disabled:  { label: "Disabled",  icon: <XCircle className="h-3 w-3" />,      cls: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30" },
+    disabled:  { label: "Disabled",  icon: <XCircle className="h-3 w-3" />,      cls: "bg-muted/60 text-muted-foreground border-border" },
   };
   const m = map[status];
   return <Badge variant="outline" className={`gap-1 text-xs ${m.cls}`}>{m.icon}{m.label}</Badge>;
@@ -95,7 +95,7 @@ function ProviderStatusBadge({ status }: { status: ProviderStatus }) {
 function KeyStatusBadge({ status }: { status: KeyStatus }) {
   const map: Record<KeyStatus, { cls: string }> = {
     active:    { cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30" },
-    disabled:  { cls: "bg-zinc-500/15 text-zinc-400 border-zinc-500/30" },
+    disabled:  { cls: "bg-muted/60 text-muted-foreground border-border" },
     exhausted: { cls: "bg-orange-500/15 text-orange-400 border-orange-500/30" },
     cooling:   { cls: "bg-blue-500/15 text-blue-400 border-blue-500/30" },
     error:     { cls: "bg-red-500/15 text-red-400 border-red-500/30" },
@@ -107,10 +107,10 @@ function HealthBar({ score }: { score: number }) {
   const color = score >= 70 ? "bg-emerald-500" : score >= 30 ? "bg-amber-500" : "bg-red-500";
   return (
     <div className="flex items-center gap-2">
-      <div className="h-1.5 w-20 rounded-full bg-white/10">
+      <div className="h-1.5 w-20 rounded-full bg-muted/30">
         <div className={`h-full rounded-full ${color}`} style={{ width: `${score}%` }} />
       </div>
-      <span className="text-xs text-zinc-400">{score}</span>
+      <span className="text-xs text-muted-foreground">{score}</span>
     </div>
   );
 }
@@ -226,7 +226,7 @@ function RotateKeyDialog({ slug, keyId, keyName }: { slug: string; keyId: string
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="sm" variant="ghost" className="h-6 px-2 text-xs text-zinc-400 hover:text-white gap-1">
+        <Button size="sm" variant="ghost" className="h-6 px-2 text-xs text-muted-foreground hover:text-white gap-1">
           <Rotate3d className="h-3 w-3" /> Rotate
         </Button>
       </DialogTrigger>
@@ -279,15 +279,15 @@ function KeyRow({ slug, k }: { slug: string; k: KeyHealthReport }) {
   });
 
   return (
-    <div className="flex items-center gap-3 rounded-lg border border-white/5 bg-white/3 px-3 py-2">
+    <div className="flex items-center gap-3 rounded-lg border border-border/50 bg-muted/10 px-3 py-2">
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-medium text-white truncate">{k.name}</span>
-          <code className="text-xs font-mono text-zinc-500">{k.prefix}…</code>
+          <code className="text-xs font-mono text-muted-foreground">{k.prefix}…</code>
           <KeyStatusBadge status={k.status} />
           {k.cooldownUntil && <span className="text-xs text-blue-400"><Clock className="inline h-3 w-3 mr-0.5" />cooling</span>}
         </div>
-        <div className="flex items-center gap-4 mt-1 text-xs text-zinc-500 flex-wrap">
+        <div className="flex items-center gap-4 mt-1 text-xs text-muted-foreground flex-wrap">
           <span>{k.totalRequests.toLocaleString()} reqs</span>
           <span>{pct(k.successRate)} ok</span>
           <span>{fmt(k.avgResponseTimeMs)} avg</span>
@@ -302,7 +302,7 @@ function KeyRow({ slug, k }: { slug: string; k: KeyHealthReport }) {
         </Button>
         <RotateKeyDialog slug={slug} keyId={k.id} keyName={k.name} />
         <Button size="sm" variant="ghost" className="h-6 w-6 p-0" onClick={() => toggle.mutate()} disabled={toggle.isPending} title={k.enabled ? "Disable" : "Enable"}>
-          {k.enabled ? <ToggleRight className="h-3.5 w-3.5 text-emerald-400" /> : <ToggleLeft className="h-3.5 w-3.5 text-zinc-500" />}
+          {k.enabled ? <ToggleRight className="h-3.5 w-3.5 text-emerald-400" /> : <ToggleLeft className="h-3.5 w-3.5 text-muted-foreground" />}
         </Button>
         <Button size="sm" variant="ghost" className="h-6 w-6 p-0 text-red-400 hover:text-red-300" onClick={() => remove.mutate()} disabled={remove.isPending} title="Remove key">
           <Trash2 className="h-3 w-3" />
@@ -345,11 +345,11 @@ function ProviderCard({ p, isCurrentActive }: { p: ProviderHealthReport; isCurre
   const STRATEGIES: RoutingStrategy[] = ["round-robin","least-recently-used","lowest-latency","random","priority","least-failures"];
 
   return (
-    <Card className={`border-white/8 bg-zinc-900/60 backdrop-blur-sm ${isCurrentActive ? "ring-1 ring-violet-500/40" : ""}`}>
+    <Card className={`border-border bg-card/60 backdrop-blur-sm ${isCurrentActive ? "ring-1 ring-violet-500/40" : ""}`}>
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/5 text-zinc-300">
+            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-muted/20 text-foreground/80">
               <Server className="h-4 w-4" />
             </div>
             <div className="min-w-0">
@@ -361,13 +361,13 @@ function ProviderCard({ p, isCurrentActive }: { p: ProviderHealthReport; isCurre
                     <Star className="h-2.5 w-2.5" /> Active
                   </Badge>
                 )}
-                {!p.enabled && <Badge variant="outline" className="text-xs text-zinc-500 border-zinc-600">Off</Badge>}
+                {!p.enabled && <Badge variant="outline" className="text-xs text-muted-foreground border-zinc-600">Off</Badge>}
               </div>
-              <div className="flex items-center gap-3 mt-0.5 text-xs text-zinc-500">
+              <div className="flex items-center gap-3 mt-0.5 text-xs text-muted-foreground">
                 <span>Priority {p.priority}</span>
                 <span className="text-emerald-400">{healthyKeys} healthy</span>
                 <span className="text-red-400/80">{disabledKeys} disabled</span>
-                <span className="text-zinc-500">{p.totalKeys} total</span>
+                <span className="text-muted-foreground">{p.totalKeys} total</span>
                 <span>{p.totalRequests.toLocaleString()} reqs</span>
               </div>
             </div>
@@ -398,8 +398,8 @@ function ProviderCard({ p, isCurrentActive }: { p: ProviderHealthReport; isCurre
             { label: "Avg Latency",  value: fmt(p.avgLatencyMs) },
             { label: "Failures",     value: p.failureCount.toLocaleString() },
           ].map(({ label, value }) => (
-            <div key={label} className="rounded-md bg-white/4 px-2.5 py-2">
-              <p className="text-xs text-zinc-500 mb-0.5">{label}</p>
+            <div key={label} className="rounded-md bg-muted/15 px-2.5 py-2">
+              <p className="text-xs text-muted-foreground mb-0.5">{label}</p>
               <div className="text-sm font-medium text-white">{value}</div>
             </div>
           ))}
@@ -407,25 +407,25 @@ function ProviderCard({ p, isCurrentActive }: { p: ProviderHealthReport; isCurre
 
         {/* Active key + last error row */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="rounded-md bg-white/4 px-2.5 py-2">
-            <p className="text-xs text-zinc-500 mb-0.5 flex items-center gap-1">
+          <div className="rounded-md bg-muted/15 px-2.5 py-2">
+            <p className="text-xs text-muted-foreground mb-0.5 flex items-center gap-1">
               <Key className="h-3 w-3" /> Current Active Key
             </p>
             {activeKey ? (
               <div className="flex items-center gap-2">
                 <span className="text-sm font-medium text-white truncate">{activeKey.name}</span>
-                <code className="text-xs font-mono text-zinc-500 shrink-0">{activeKey.prefix}…</code>
+                <code className="text-xs font-mono text-muted-foreground shrink-0">{activeKey.prefix}…</code>
               </div>
             ) : (
-              <span className="text-sm text-zinc-500 italic">none</span>
+              <span className="text-sm text-muted-foreground italic">none</span>
             )}
             {activeKey?.lastUsed && (
-              <p className="text-xs text-zinc-600 mt-0.5">last used {relTime(activeKey.lastUsed)}</p>
+              <p className="text-xs text-muted-foreground/70 mt-0.5">last used {relTime(activeKey.lastUsed)}</p>
             )}
           </div>
 
-          <div className="rounded-md bg-white/4 px-2.5 py-2">
-            <p className="text-xs text-zinc-500 mb-0.5 flex items-center gap-1">
+          <div className="rounded-md bg-muted/15 px-2.5 py-2">
+            <p className="text-xs text-muted-foreground mb-0.5 flex items-center gap-1">
               <AlertTriangle className="h-3 w-3" /> Last Error
             </p>
             {lastErrorKey?.lastError ? (
@@ -433,7 +433,7 @@ function ProviderCard({ p, isCurrentActive }: { p: ProviderHealthReport; isCurre
                 <p className="text-xs text-red-400 truncate" title={lastErrorKey.lastError}>
                   {lastErrorKey.lastError.slice(0, 60)}
                 </p>
-                <p className="text-xs text-zinc-600 mt-0.5">
+                <p className="text-xs text-muted-foreground/70 mt-0.5">
                   {lastErrorKey.name} · {relTime(lastErrorKey.lastFailure)}
                 </p>
               </>
@@ -444,14 +444,14 @@ function ProviderCard({ p, isCurrentActive }: { p: ProviderHealthReport; isCurre
         </div>
 
         {/* Last activity row */}
-        <div className="flex items-center gap-4 text-xs text-zinc-500">
+        <div className="flex items-center gap-4 text-xs text-muted-foreground">
           <span>Last health check: {relTime(p.lastHealthCheck)}</span>
           {lastSuccessTs && <span>Last rotation activity: {relTime(lastSuccessTs)}</span>}
         </div>
 
         {/* Routing strategy */}
         <div className="flex items-center gap-3">
-          <span className="text-xs text-zinc-500 shrink-0">Routing:</span>
+          <span className="text-xs text-muted-foreground shrink-0">Routing:</span>
           <Select onValueChange={(v) => setStrategy.mutate(v as RoutingStrategy)} disabled={setStrategy.isPending}>
             <SelectTrigger className="h-7 text-xs w-52">
               <SelectValue placeholder={p.slug} />
@@ -468,7 +468,7 @@ function ProviderCard({ p, isCurrentActive }: { p: ProviderHealthReport; isCurre
         <div>
           <div className="flex items-center justify-between mb-2">
             <button
-              className="flex items-center gap-1.5 text-xs font-medium text-zinc-300 hover:text-white"
+              className="flex items-center gap-1.5 text-xs font-medium text-foreground/80 hover:text-white"
               onClick={() => setExpanded(!expanded)}
             >
               <Key className="h-3 w-3" />
@@ -481,7 +481,7 @@ function ProviderCard({ p, isCurrentActive }: { p: ProviderHealthReport; isCurre
           {expanded && (
             <div className="space-y-1.5">
               {p.keys.length === 0 ? (
-                <p className="text-xs text-zinc-500 italic py-2 text-center">
+                <p className="text-xs text-muted-foreground italic py-2 text-center">
                   No keys added yet. Add one above or set <code className="font-mono">{p.slug.toUpperCase().replace(/-/g,"_")}_API_KEY</code> environment variable.
                 </p>
               ) : (
@@ -500,37 +500,37 @@ function ProviderCard({ p, isCurrentActive }: { p: ProviderHealthReport; isCurre
 function RequestLogTable() {
   const { data: logs, isLoading } = useRequestLog();
 
-  if (isLoading) return <div className="py-8 text-center text-sm text-zinc-500">Loading requests…</div>;
-  if (!logs?.length) return <div className="py-8 text-center text-sm text-zinc-500">No requests logged yet.</div>;
+  if (isLoading) return <div className="py-8 text-center text-sm text-muted-foreground">Loading requests…</div>;
+  if (!logs?.length) return <div className="py-8 text-center text-sm text-muted-foreground">No requests logged yet.</div>;
 
   return (
-    <div className="rounded-lg border border-white/8 overflow-hidden">
+    <div className="rounded-lg border border-border overflow-hidden">
       <Table>
         <TableHeader>
-          <TableRow className="border-white/8 hover:bg-transparent">
-            <TableHead className="text-xs text-zinc-500">Provider</TableHead>
-            <TableHead className="text-xs text-zinc-500">Model</TableHead>
-            <TableHead className="text-xs text-zinc-500">Task</TableHead>
-            <TableHead className="text-xs text-zinc-500">Status</TableHead>
-            <TableHead className="text-xs text-zinc-500 text-right">Latency</TableHead>
-            <TableHead className="text-xs text-zinc-500 text-right">Retries</TableHead>
-            <TableHead className="text-xs text-zinc-500">When</TableHead>
+          <TableRow className="border-border hover:bg-transparent">
+            <TableHead className="text-xs text-muted-foreground">Provider</TableHead>
+            <TableHead className="text-xs text-muted-foreground">Model</TableHead>
+            <TableHead className="text-xs text-muted-foreground">Task</TableHead>
+            <TableHead className="text-xs text-muted-foreground">Status</TableHead>
+            <TableHead className="text-xs text-muted-foreground text-right">Latency</TableHead>
+            <TableHead className="text-xs text-muted-foreground text-right">Retries</TableHead>
+            <TableHead className="text-xs text-muted-foreground">When</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {logs.map(r => (
-            <TableRow key={r.id} className="border-white/5 hover:bg-white/3">
+            <TableRow key={r.id} className="border-border/50 hover:bg-muted/10">
               <TableCell className="text-xs font-medium text-white">{r.providerSlug}</TableCell>
-              <TableCell className="text-xs text-zinc-400 font-mono max-w-[140px] truncate">{r.model ?? "—"}</TableCell>
-              <TableCell className="text-xs text-zinc-400">{r.taskType ?? "—"}</TableCell>
+              <TableCell className="text-xs text-muted-foreground font-mono max-w-[140px] truncate">{r.model ?? "—"}</TableCell>
+              <TableCell className="text-xs text-muted-foreground">{r.taskType ?? "—"}</TableCell>
               <TableCell>
                 <Badge variant="outline" className={`text-xs ${r.status === "success" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-red-500/10 text-red-400 border-red-500/20"}`}>
                   {r.status}
                 </Badge>
               </TableCell>
-              <TableCell className="text-xs text-zinc-400 text-right">{r.latencyMs ? `${r.latencyMs}ms` : "—"}</TableCell>
-              <TableCell className="text-xs text-zinc-400 text-right">{r.retries}</TableCell>
-              <TableCell className="text-xs text-zinc-500">{relTime(r.createdAt)}</TableCell>
+              <TableCell className="text-xs text-muted-foreground text-right">{r.latencyMs ? `${r.latencyMs}ms` : "—"}</TableCell>
+              <TableCell className="text-xs text-muted-foreground text-right">{r.retries}</TableCell>
+              <TableCell className="text-xs text-muted-foreground">{relTime(r.createdAt)}</TableCell>
             </TableRow>
           ))}
         </TableBody>
@@ -555,7 +555,7 @@ export default function AIProvidersPage() {
   });
 
   const overallStatusColor = useCallback(() => {
-    if (!health) return "text-zinc-500";
+    if (!health) return "text-muted-foreground";
     const rate = health.overallSuccess;
     if (rate >= 0.95) return "text-emerald-400";
     if (rate >= 0.80) return "text-amber-400";
@@ -572,7 +572,7 @@ export default function AIProvidersPage() {
   return (
     <div className="flex flex-col h-full overflow-hidden">
       {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="shrink-0 border-b border-white/8 bg-zinc-950/80 backdrop-blur px-6 py-4">
+      <div className="shrink-0 border-b border-border bg-background/90 backdrop-blur px-6 py-4">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-500/15 text-violet-400">
@@ -580,7 +580,7 @@ export default function AIProvidersPage() {
             </div>
             <div>
               <h1 className="text-lg font-semibold text-white">AI Provider Manager</h1>
-              <p className="text-xs text-zinc-500">
+              <p className="text-xs text-muted-foreground">
                 Multi-provider orchestration · auto-discovery · key rotation · failover
               </p>
             </div>
@@ -644,8 +644,8 @@ export default function AIProvidersPage() {
                   color: "text-amber-400",
                 },
               ].map(({ icon, label, value, color }) => (
-                <Card key={label} className="border-white/8 bg-zinc-900/60 p-4">
-                  <div className={`flex items-center gap-2 mb-2 ${color}`}>{icon}<span className="text-xs text-zinc-500">{label}</span></div>
+                <Card key={label} className="border-border bg-card/60 p-4">
+                  <div className={`flex items-center gap-2 mb-2 ${color}`}>{icon}<span className="text-xs text-muted-foreground">{label}</span></div>
                   <p className="text-xl font-bold text-white leading-tight">{value}</p>
                 </Card>
               ))}
@@ -656,9 +656,9 @@ export default function AIProvidersPage() {
               <div className="flex items-center gap-3 rounded-xl border border-violet-500/20 bg-violet-500/5 px-4 py-3">
                 <Star className="h-4 w-4 text-violet-400 shrink-0" />
                 <div className="flex-1 min-w-0">
-                  <span className="text-xs text-zinc-400">Current Active Provider: </span>
+                  <span className="text-xs text-muted-foreground">Current Active Provider: </span>
                   <span className="text-sm font-semibold text-white">{currentActiveProvider.displayName}</span>
-                  <span className="text-xs text-zinc-500 ml-2">
+                  <span className="text-xs text-muted-foreground ml-2">
                     {currentActiveProvider.activeKeys} key{currentActiveProvider.activeKeys !== 1 ? "s" : ""} ready
                     · {pct(currentActiveProvider.successRate)} success rate
                     · {fmt(currentActiveProvider.avgLatencyMs)} avg
@@ -671,7 +671,7 @@ export default function AIProvidersPage() {
         )}
 
         {/* ── Tabs ──────────────────────────────────────────────────────────── */}
-        <div className="flex gap-1 rounded-lg bg-white/5 p-1 w-fit">
+        <div className="flex gap-1 rounded-lg bg-muted/20 p-1 w-fit">
           {([
             ["providers", <Shield className="h-3.5 w-3.5" key="s" />, "Providers"],
             ["requests",  <List   className="h-3.5 w-3.5" key="l" />, "Request Log"],
@@ -680,7 +680,7 @@ export default function AIProvidersPage() {
               key={id}
               onClick={() => setTab(id as Tab)}
               className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                tab === id ? "bg-white/10 text-white" : "text-zinc-500 hover:text-zinc-300"
+                tab === id ? "bg-muted/30 text-white" : "text-muted-foreground hover:text-foreground/80"
               }`}
             >
               {icon}{label}
@@ -692,12 +692,12 @@ export default function AIProvidersPage() {
         {tab === "providers" && (
           <div className="space-y-4">
             {isLoading && (
-              <div className="py-16 text-center text-sm text-zinc-500">
+              <div className="py-16 text-center text-sm text-muted-foreground">
                 <RefreshCw className="h-5 w-5 animate-spin mx-auto mb-2" /> Loading providers…
               </div>
             )}
             {!isLoading && sortedProviders.length === 0 && (
-              <div className="py-16 text-center text-sm text-zinc-500">No providers configured.</div>
+              <div className="py-16 text-center text-sm text-muted-foreground">No providers configured.</div>
             )}
             {sortedProviders.map(p => (
               <ProviderCard
@@ -713,9 +713,9 @@ export default function AIProvidersPage() {
         {tab === "requests" && (
           <div className="space-y-3">
             <div className="flex items-center gap-2">
-              <BarChart3 className="h-4 w-4 text-zinc-500" />
-              <span className="text-sm font-medium text-zinc-300">Recent Requests</span>
-              <span className="text-xs text-zinc-600">(last 30 · auto-refreshes every 15s)</span>
+              <BarChart3 className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium text-foreground/80">Recent Requests</span>
+              <span className="text-xs text-muted-foreground/70">(last 30 · auto-refreshes every 15s)</span>
             </div>
             <RequestLogTable />
           </div>
@@ -723,7 +723,7 @@ export default function AIProvidersPage() {
 
         {/* ── Footer timestamp ───────────────────────────────────────────────── */}
         {health?.generatedAt && (
-          <p className="text-xs text-zinc-600 text-right">
+          <p className="text-xs text-muted-foreground/70 text-right">
             Last refreshed {relTime(health.generatedAt)}
           </p>
         )}

@@ -849,12 +849,12 @@ export default function Settings() {
                   <div className="space-y-0.5 min-w-0">
                     <Label>Dark Mode</Label>
                     <p className="text-sm text-muted-foreground">
-                      Toggle dark mode on or off.
+                      Project 7 always uses its deep-black premium theme.
                     </p>
                   </div>
                   <Switch
-                    checked={theme === "dark"}
-                    onCheckedChange={(c) => setTheme(c ? "dark" : "light")}
+                    checked={true}
+                    disabled
                   />
                 </div>
               </CardContent>
