@@ -47,7 +47,7 @@ outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "cd artifacts/api-server && pnpm run dev"
+args = "cd artifacts/api-server && node --enable-source-maps ./dist/index.mjs"
 waitForPort = 8000
 
 [agent]
@@ -65,6 +65,10 @@ channel = "stable-25_05"
 [[ports]]
 localPort = 5000
 externalPort = 80
+
+[[ports]]
+localPort = 8000
+externalPort = 8000
 
 [userenv]
 
