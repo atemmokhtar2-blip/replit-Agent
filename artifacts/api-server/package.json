@@ -6,11 +6,12 @@
   "scripts": {
     "dev": "export NODE_ENV=development && pnpm run build && pnpm run start",
     "build": "node ./build.mjs",
+    "build:vercel": "node ./build-vercel.mjs",
     "start": "node --enable-source-maps ./dist/index.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@types/bcrypt": "^6.0.0",
+    "@types/bcryptjs": "^3.0.0",
     "@types/jsonwebtoken": "^9.0.10",
     "@workspace/ai-orchestrator": "workspace:*",
     "@workspace/ai-provider": "workspace:*",
@@ -18,7 +19,7 @@
     "@workspace/db": "workspace:*",
     "@workspace/github": "workspace:*",
     "@workspace/repo-agent": "workspace:*",
-    "bcrypt": "^6.0.0",
+    "bcryptjs": "^3.0.3",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "drizzle-orm": "catalog:",
