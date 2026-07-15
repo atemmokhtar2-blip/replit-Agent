@@ -297,7 +297,14 @@ export default function ChatWorkspace() {
 
   const { data: convList, isLoading: listLoading } = useListConversations();
   const { data: activeConv, isLoading: convLoading } = useGetConversation(selectedId!, {
-    query: { enabled: !!selectedId, queryKey: getGetConversationQueryKey(selectedId ?? "") },
+    query: {
+      enabled: !!selectedId,
+      queryKey: getGetConversationQueryKey(selectedId ?? ""),
+      // Keep data fresh for 5 minutes so navigating away and back doesn't flash an empty state.
+      // We invalidate manually after every message exchange so data stays accurate.
+      staleTime: 5 * 60 * 1000,
+      refetchOnWindowFocus: false,
+    },
   });
 
   const createMutation = useCreateConversation();
@@ -486,8 +493,10 @@ export default function ChatWorkspace() {
     );
   };
 
-  const handleWorkspaceSuccess = useCallback((_conversationId: string) => {
+  const handleWorkspaceSuccess = useCallback((conversationId: string) => {
+    // Refresh the sidebar list (title/timestamp) AND the open conversation (new messages).
     queryClient.invalidateQueries({ queryKey: getListConversationsQueryKey() });
+    queryClient.invalidateQueries({ queryKey: getGetConversationQueryKey(conversationId) });
   }, [queryClient]);
 
   const allConversations = convList?.items ?? [];

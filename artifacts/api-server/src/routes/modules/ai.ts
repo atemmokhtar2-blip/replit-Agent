@@ -64,11 +64,23 @@ router.get("/projects/:conversationId/preview", async (req, res) => {
   if (indexFile) {
     try {
       const content = await fs.readFile(path.join(projectDir, indexFile), "utf8");
-      // Rewrite relative asset paths to go through the public file endpoint
-      const base = `<base href="/api/v1/ai/projects/${safeId}/preview-asset/">`;
-      const withBase = content.replace(/<head([^>]*)>/i, `<head$1>${base}`);
+      // The directory the index.html lives in (e.g. "dist", "public", or "").
+      // All absolute asset paths inside it are relative to this subdirectory.
+      const assetBase = path.dirname(indexFile) === "." ? "" : path.dirname(indexFile) + "/";
+      const previewAssetRoot = `/api/v1/ai/projects/${safeId}/preview-asset/${assetBase}`;
+
+      // Inject <base> for relative hrefs (fallback for any remaining relative paths)
+      const withBase = content
+        .replace(/<head([^>]*)>/i, `<head$1><base href="${previewAssetRoot}">`)
+        // Rewrite root-relative src/href="/..." → preview-asset URL.
+        // Vite outputs <script src="/assets/..."> and <link href="/assets/..."> — these
+        // are absolute paths and <base> does NOT affect them; we must rewrite explicitly.
+        .replace(/(src|href)="\/(?!\/|api\/)([^"]*)"/g, `$1="${previewAssetRoot}$2"`)
+        .replace(/(src|href)='\/(?!\/|api\/)([^']*)'/g, `$1='${previewAssetRoot}$2'`);
       res.setHeader("Content-Type", "text/html");
       res.setHeader("X-Frame-Options", "SAMEORIGIN");
+      // Allow cross-origin resources the generated app may load
+      res.setHeader("Content-Security-Policy", "default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;");
       res.send(withBase);
       return;
     } catch { /* fall through to explorer */ }
