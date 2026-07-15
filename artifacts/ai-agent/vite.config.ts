@@ -4,14 +4,11 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 
-const rawPort = process.env.PORT;
 const isBuild = process.argv.includes("build");
 
-const port = Number(rawPort ?? "5000");
-
-if (!isBuild && (Number.isNaN(port) || port <= 0)) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
-}
+// Always serve on 5000 — Replit's webview is mapped to this port.
+// Ignore the PORT env var injected by the workflow runner.
+const port = 5000;
 
 const basePath = process.env.BASE_PATH ?? "/";
 
