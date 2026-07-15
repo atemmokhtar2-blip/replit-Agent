@@ -6,9 +6,13 @@ import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 
 const isBuild = process.argv.includes("build");
 
-// Always serve on 5000 — Replit's webview is mapped to this port.
-// Ignore the PORT env var injected by the workflow runner.
-const port = 5000;
+// Use PORT env var if Replit provides one; fall back to 5000 for local dev.
+// Use || so an empty string also falls back (not just null/undefined).
+const port = Number(process.env.PORT || "5000");
+
+if (!isBuild && (Number.isNaN(port) || port <= 0)) {
+  throw new Error(`Invalid PORT value: "${process.env.PORT}"`);
+}
 
 const basePath = process.env.BASE_PATH ?? "/";
 
