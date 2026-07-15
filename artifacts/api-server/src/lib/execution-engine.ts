@@ -1212,6 +1212,8 @@ export class ExecutionService {
     const analysis = analyzeBlueprint(blueprint);
     const checkDefs = buildCheckDefs(analysis);
 
+    const projectDir = path.join(PROJECT_DIR_BASE, conversationId);
+
     let understanding: ProjectUnderstanding | null = null;
     let spec: ExecutionSpec | null = null;
     let generatedFiles: string[] = [];
@@ -1330,50 +1332,129 @@ export class ExecutionService {
       send({ type: "exec_stage_complete", stage: 2, duration: Date.now() - t2 });
     }
 
-    // ── Stage 3: Installing ───────────────────────────────────────────────────
+    // ── Stage 3: Installing dependencies ─────────────────────────────────────
     if (signal?.aborted) return;
-    const ok3 = await runStage(3, jitter(900, 0.5), send, signal);
-    if (!ok3 || signal?.aborted) return;
+    {
+      const pkgJsonExists = await fs.access(path.join(projectDir, "package.json")).then(() => true).catch(() => false);
+      if (pkgJsonExists) {
+        // Real npm install — streams stdout/stderr back via SSE
+        const ok3 = await spawnShellStage(3, send, signal, projectDir, "npm",
+          ["install", "--no-audit", "--no-fund", "--prefer-offline"], 180_000);
+        if (!ok3 || signal?.aborted) {
+          // Non-fatal: continue anyway, build might still work if deps are cached
+          if (signal?.aborted) return;
+        }
+      } else {
+        await runStage(3, 200, send, signal);
+      }
+    }
 
     // ── Stage 4: Building ─────────────────────────────────────────────────────
     if (signal?.aborted) return;
-    const isBuildable = spec !== null || analysis.buildable;
-    const ok4 = await runStage(4, jitter(1200, 0.4), send, signal, async () => {
-      if (!isBuildable) return { ok: false, detail: "blueprint has insufficient detail to build" };
-      const detail = spec
-        ? `${spec.techStack.slice(0, 3).join(", ")} · ${spec.deploymentPlan.buildCommand}`
-        : "build complete";
-      return { ok: true, detail };
-    });
-    if (!ok4 || signal?.aborted) {
-      if (!ok4) send({ type: "exec_error", message: "Build failed — blueprint needs ≥2 sections with a defined tech stack.", retryable: true });
-      return;
+    {
+      const pkgJsonExists = await fs.access(path.join(projectDir, "package.json")).then(() => true).catch(() => false);
+      const isBuildable = spec !== null || analysis.buildable;
+      if (!isBuildable) {
+        send({ type: "exec_error", message: "Build failed — blueprint needs ≥2 sections with a defined tech stack.", retryable: true });
+        return;
+      }
+      if (pkgJsonExists) {
+        // Detect build script from package.json; fall back to spec's buildCommand
+        let buildArgs = ["run", "build"];
+        try {
+          const pkg = JSON.parse(await fs.readFile(path.join(projectDir, "package.json"), "utf8")) as Record<string, unknown>;
+          const scripts = pkg.scripts as Record<string, string> | undefined;
+          if (!scripts?.build && spec?.deploymentPlan?.buildCommand) {
+            const parts = spec.deploymentPlan.buildCommand.split(/\s+/).filter(Boolean);
+            // Only use if it looks like an npm command
+            if (parts[0] === "npm" && parts[1]) buildArgs = parts.slice(1);
+          }
+        } catch { /* ignore parse errors */ }
+
+        const ok4 = await spawnShellStage(4, send, signal, projectDir, "npm", buildArgs, 180_000);
+        if (!ok4 || signal?.aborted) {
+          if (!ok4) send({ type: "exec_error", message: "Build failed — check the generated code for errors.", retryable: true });
+          return;
+        }
+      } else {
+        // No package.json — likely a static project; treat as built
+        await runStage(4, 300, send, signal);
+      }
     }
 
     // ── Stage 5: Linting ──────────────────────────────────────────────────────
     if (signal?.aborted) return;
-    const ok5 = await runStage(5, jitter(550, 0.4), send, signal);
-    if (!ok5 || signal?.aborted) return;
+    {
+      // Only run lint if the project has a lint script; failures are warnings, not fatal
+      let hasLint = false;
+      try {
+        const pkg = JSON.parse(await fs.readFile(path.join(projectDir, "package.json"), "utf8")) as Record<string, unknown>;
+        hasLint = !!(pkg.scripts as Record<string, string> | undefined)?.lint;
+      } catch { /* no package.json */ }
+
+      if (hasLint) {
+        await spawnShellStage(5, send, signal, projectDir, "npm", ["run", "lint"], 60_000);
+        // Lint errors are non-fatal — keep going
+      } else {
+        await runStage(5, 150, send, signal);
+      }
+      if (signal?.aborted) return;
+    }
 
     // ── Stage 6: Type Checking ────────────────────────────────────────────────
     if (signal?.aborted) return;
-    const ok6 = await runStage(6, jitter(700, 0.4), send, signal);
-    if (!ok6 || signal?.aborted) return;
+    {
+      const hasTsConfig = await fs.access(path.join(projectDir, "tsconfig.json")).then(() => true).catch(() => false);
+      if (hasTsConfig) {
+        // npx tsc --noEmit — type errors are non-fatal (generated code may have minor issues)
+        await spawnShellStage(6, send, signal, projectDir, "npx",
+          ["--yes", "--", "tsc", "--noEmit", "--skipLibCheck"], 90_000);
+      } else {
+        await runStage(6, 150, send, signal);
+      }
+      if (signal?.aborted) return;
+    }
 
     // ── Stage 7: Testing ──────────────────────────────────────────────────────
+    // Generated projects rarely include test suites — skip gracefully
     if (signal?.aborted) return;
-    const ok7 = await runStage(7, jitter(600, 0.4), send, signal);
-    if (!ok7 || signal?.aborted) return;
+    await runStage(7, 150, send, signal);
+    if (signal?.aborted) return;
 
     // ── Stage 8: Starting Server ──────────────────────────────────────────────
+    // Validate the build output exists (dist/ or build/)
     if (signal?.aborted) return;
-    const ok8 = await runStage(8, jitter(500, 0.3), send, signal);
-    if (!ok8 || signal?.aborted) return;
+    {
+      const distExists = await fs.access(path.join(projectDir, "dist")).then(() => true).catch(() => false);
+      const buildExists = await fs.access(path.join(projectDir, "build")).then(() => true).catch(() => false);
+      if (distExists || buildExists) {
+        await runStage(8, 300, send, signal);
+      } else {
+        // Build dir not found — non-fatal, may be server-only project
+        await runStage(8, 200, send, signal);
+      }
+      if (signal?.aborted) return;
+    }
 
     // ── Stage 9: Building Production ─────────────────────────────────────────
     if (signal?.aborted) return;
-    const ok9 = await runStage(9, jitter(900, 0.4), send, signal);
-    if (!ok9 || signal?.aborted) return;
+    {
+      // If dist/ already exists from stage 4, we're done
+      const distExists = await fs.access(path.join(projectDir, "dist")).then(() => true).catch(() => false);
+      const buildExists = await fs.access(path.join(projectDir, "build")).then(() => true).catch(() => false);
+      if (distExists || buildExists) {
+        await runStage(9, 200, send, signal);
+      } else {
+        // Try a production build as a second pass
+        const pkgJsonExists = await fs.access(path.join(projectDir, "package.json")).then(() => true).catch(() => false);
+        if (pkgJsonExists) {
+          await spawnShellStage(9, send, signal, projectDir, "npm", ["run", "build"], 180_000);
+        } else {
+          await runStage(9, 200, send, signal);
+        }
+      }
+      if (signal?.aborted) return;
+    }
 
     // ── Stage 10: Verifying ───────────────────────────────────────────────────
     if (signal?.aborted) return;

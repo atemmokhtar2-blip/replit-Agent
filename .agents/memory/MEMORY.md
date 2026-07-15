@@ -23,3 +23,4 @@
 - [DB schema must be pushed after install](replit-migration-setup.md) — run pnpm --filter @workspace/db run push after fresh clone/install; ai_provider_registry table missing causes ProviderManager to have 0 providers and all planner calls to fail.
 - [OAuth system architecture](oauth-system.md) — HMAC-signed CSRF state (no session storage); AES-256-GCM encrypted client secrets via key-vault; admin routes at /v1/admin/auth/providers; provider registry in lib/oauth/registry.ts; users.passwordHash is nullable for OAuth-only accounts.
 - [Workflow runner PORT injection](workflow-runner-port-injection.md) — Replit injects dynamic PORT into workflows; vite must hardcode 5000, not read PORT env.
+- [OpenRouter provider auto-discovery](openrouter-provider-autodiscovery.md) — ProviderManager auto-seeds OPENROUTER_API_KEY from env into DB at startup; "0 keys" means the secret isn't set.
