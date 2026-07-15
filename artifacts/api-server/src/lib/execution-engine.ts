@@ -32,6 +32,7 @@ import { buildSpec, saveSpec } from "@workspace/ai-orchestrator";
 import type { ExecutionSpec, ProjectUnderstanding } from "@workspace/ai-orchestrator";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { spawn } from "node:child_process";
 import { BatchFileGenerator } from "./file-generator.js";
 
 // ── SSE Event types ────────────────────────────────────────────────────────────
@@ -1031,6 +1032,71 @@ async function runStage(
 
   send({ type: "exec_stage_complete", stage: stageId, duration: Date.now() - t });
   return true;
+}
+
+// ── Real shell stage runner — streams stdout/stderr back via SSE ───────────────
+
+async function spawnShellStage(
+  stageId: ExecStageId,
+  send: SendFn,
+  signal: AbortSignal | undefined,
+  projectDir: string,
+  cmd: string,
+  args: string[],
+  timeoutMs = 120_000,
+): Promise<boolean> {
+  const stage = EXEC_STAGES.find(s => s.id === stageId)!;
+  send({ type: "exec_stage_start", stage: stageId, stageName: stage.name, stageLabel: stage.label });
+  const t = Date.now();
+
+  return new Promise<boolean>((resolve) => {
+    const proc = spawn(cmd, args, {
+      cwd: projectDir,
+      env: { ...process.env, FORCE_COLOR: "0", CI: "true", npm_config_audit: "false" },
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+
+    let lastOutput = "";
+    const onData = (chunk: Buffer) => {
+      const text = chunk.toString("utf8");
+      lastOutput = (lastOutput + text).slice(-3000);
+      // Stream a trimmed line back so the UI stays updated
+      const line = text.trim().slice(0, 200);
+      if (line) send({ type: "exec_stage_start", stage: stageId, stageName: stage.name, stageLabel: stage.label, detail: line });
+    };
+    proc.stdout?.on("data", onData);
+    proc.stderr?.on("data", onData);
+
+    const timer = setTimeout(() => {
+      proc.kill("SIGTERM");
+      send({ type: "exec_stage_fail", stage: stageId, error: `Timed out after ${timeoutMs / 1000}s`, duration: Date.now() - t });
+      resolve(false);
+    }, timeoutMs);
+
+    const abortHandler = () => proc.kill("SIGTERM");
+    signal?.addEventListener("abort", abortHandler);
+
+    proc.on("close", (code) => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abortHandler);
+      if (signal?.aborted) { resolve(false); return; }
+      if (code === 0 || code === null) {
+        send({ type: "exec_stage_complete", stage: stageId, duration: Date.now() - t });
+        resolve(true);
+      } else {
+        const detail = lastOutput.trim().slice(-400) || `Exited with code ${code}`;
+        send({ type: "exec_stage_fail", stage: stageId, error: detail, duration: Date.now() - t });
+        resolve(false);
+      }
+    });
+
+    proc.on("error", (err) => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abortHandler);
+      send({ type: "exec_stage_fail", stage: stageId, error: err.message, duration: Date.now() - t });
+      resolve(false);
+    });
+  });
 }
 
 // ── Verification loop (with self-healing) ─────────────────────────────────────

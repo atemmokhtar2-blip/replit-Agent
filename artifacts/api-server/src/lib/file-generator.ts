@@ -443,24 +443,79 @@ async function saveProgress(projectDir: string, p: BatchProgress): Promise<void>
     .catch(() => { /* non-fatal */ });
 }
 
-// ── Single provider call — routes through the enterprise ProviderManager ───────
+// ── Single provider call — providerManager first, direct OpenRouter fallback ───
 
 interface LLMResult { content: string; model: string }
 
 async function callProvider(provider: ProviderConfig, system: string, user: string, maxTokens: number): Promise<LLMResult> {
-  // The ProviderManager handles encryption, retry, failover, and health tracking.
-  // We pass the preferred model as a hint; it may fall back to another if needed.
-  const result = await providerManager.complete(
-    [{ role: "system", content: system }, { role: "user", content: user }],
-    { model: provider.model, maxTokens, temperature: 0.15, taskType: "code-gen" },
-  );
+  // Try providerManager first (uses DB-stored encrypted keys with health tracking).
+  try {
+    const result = await providerManager.complete(
+      [{ role: "system", content: system }, { role: "user", content: user }],
+      { model: provider.model, maxTokens, temperature: 0.15, taskType: "code-gen" },
+    );
+    if (!result.content || result.content.length < 5) {
+      const pe: ProviderError = { kind: "incomplete_response", message: "Response too short", retryable: true, waitMs: 0 };
+      throw Object.assign(new Error("Incomplete response"), { providerError: pe });
+    }
+    return { content: result.content, model: result.model };
+  } catch (_managerErr) {
+    // Fall back to direct OpenRouter call using the OPENROUTER_API_KEY env var.
+    // This works when no keys have been added via the UI yet.
+    const apiKey = process.env["OPENROUTER_API_KEY"];
+    if (!apiKey) throw _managerErr;
 
-  if (!result.content || result.content.length < 5) {
-    const pe: ProviderError = { kind: "incomplete_response", message: "Response too short", retryable: true, waitMs: 0 };
-    throw Object.assign(new Error("Incomplete response"), { providerError: pe });
+    let resp: Response;
+    try {
+      resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+          "HTTP-Referer": "https://ai-agent-platform.replit.app",
+          "X-Title": "AI-Agent-File-Generator",
+        },
+        body: JSON.stringify({
+          model: provider.model,
+          messages: [
+            { role: "system", content: system },
+            { role: "user", content: user },
+          ],
+          max_tokens: maxTokens,
+          temperature: 0.15,
+        }),
+        signal: AbortSignal.timeout(PER_MODEL_TIMEOUT_MS),
+      });
+    } catch (fetchErr) {
+      const pe: ProviderError = classifyError(fetchErr);
+      throw Object.assign(
+        fetchErr instanceof Error ? fetchErr : new Error(String(fetchErr)),
+        { providerError: pe },
+      );
+    }
+
+    if (!resp.ok) {
+      const pe: ProviderError = classifyError(new Error(`HTTP ${resp.status}`), resp.status);
+      const body = await resp.text().catch(() => "");
+      throw Object.assign(
+        new Error(`OpenRouter ${resp.status}: ${body.slice(0, 100)}`),
+        { providerError: pe },
+      );
+    }
+
+    const data = await resp.json() as {
+      choices?: Array<{ message?: { content?: string } }>;
+      model?: string;
+    };
+    const content = data.choices?.[0]?.message?.content ?? "";
+
+    if (!content || content.length < 5) {
+      const pe: ProviderError = { kind: "incomplete_response", message: "Response too short", retryable: true, waitMs: 0 };
+      throw Object.assign(new Error("Incomplete response from OpenRouter"), { providerError: pe });
+    }
+
+    return { content, model: data.model ?? provider.model };
   }
-
-  return { content: result.content, model: result.model };
 }
 
 // ── BatchFileGenerator ────────────────────────────────────────────────────────
