@@ -1,3 +1,4 @@
+- [Execution pipeline fixes](execution-fixes.md) — 5 root fixes: provider pre-flight guard, vite base './' + binary preview-asset, fake checks → honest skipped, Math.random removed from healCheck, deployment real DB impl.
 - [Vite build PORT fix](vite-build-port-fix.md) — vite.config.ts throws on missing PORT/BASE_PATH; must guard with isBuild flag during CI builds.
 - [ProtectedRoute insertBefore crash](protected-route-null-crash.md) — React 18 insertBefore crash from mixed Wouter Switch patterns (component prop vs children prop); all routes must use component prop; Toaster inside Router; ProtectedRoute must never return null.
 - [Generated API error shape](api-error-shape.md) — ApiError stores response body in .data not .error; cast as `{ data?: { error?: string } }` to access API errors.

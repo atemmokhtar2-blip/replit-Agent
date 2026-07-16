@@ -44,6 +44,9 @@ Thumbs.db
 .cursor/rules/nx-rules.mdc
 .github/instructions/nx.instructions.md
 
+# Generated project files (written by execution pipeline — not committed)
+data/projects/
+
 # Replit
 .cache/
 .local/
