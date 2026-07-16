@@ -48,6 +48,15 @@ A professional AI-powered development platform where users describe software the
 - **Auth**: register, login, forgot/reset password flows
 - **Landing**: marketing page with branding, features, pricing sections
 
+## Environment setup (required secrets)
+
+- `DATABASE_URL` — auto-injected by Replit PostgreSQL module (postgresql-16 in .replit)
+- `OPENROUTER_API_KEY` — from openrouter.ai/keys
+- `JWT_SECRET` + `JWT_REFRESH_SECRET` — random 32-byte hex secrets
+- `ENCRYPTION_KEY` — 32-byte hex, for GitHub OAuth token encryption
+- `PROVIDER_ENCRYPTION_KEY` — 32-byte hex, for AI provider key encryption
+- Run `pnpm --filter @workspace/db run push` after fresh setup or schema changes
+
 ## Gotchas
 
 - HTTP headers must be ASCII-only — em dashes crash OpenRouter requests with a ByteString error
@@ -55,6 +64,7 @@ A professional AI-powered development platform where users describe software the
 - Generated API hooks: `getListConversationsQueryKey()` takes optional params — pass none for the base key
 - `AIConversationList` returns `{ items, total, page, per_page }` (not just an array)
 - Vite config must guard `process.env.PORT` / `BASE_PATH` with an `isBuild` flag to avoid CI build failures
+- `Start Backend` workflow must NOT use `waitForPort = 8080` — platform port detection for this port is unreliable; always set `PORT=8080` explicitly in the workflow args
 
 ## User preferences
 
