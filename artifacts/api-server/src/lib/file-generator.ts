@@ -857,12 +857,20 @@ export class BatchFileGenerator {
         `import { defineConfig } from 'vite';\n` +
         `import react from '@vitejs/plugin-react';\n\n` +
         `export default defineConfig({\n` +
+        `  // base: './' ensures all asset paths are relative so the built dist/\n` +
+        `  // can be served from any path prefix (preview endpoint, CDN, etc.)\n` +
+        `  base: './',\n` +
         `  plugins: [react()],\n` +
         `  server: {\n` +
         `    port: 5173,\n` +
         `    host: true,\n` +
         `    allowedHosts: true,\n` +
         `    proxy: { '/api': { target: 'http://localhost:3000', changeOrigin: true } },\n` +
+        `  },\n` +
+        `  build: {\n` +
+        `    outDir: 'dist',\n` +
+        `    // relative asset paths so the preview endpoint can rewrite them\n` +
+        `    assetsDir: 'assets',\n` +
         `  },\n` +
         `});\n`;
     }

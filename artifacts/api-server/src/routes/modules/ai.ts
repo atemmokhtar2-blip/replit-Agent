@@ -123,17 +123,37 @@ router.get("/projects/:conversationId/preview-asset/{*filePath}", async (req, re
   if (!fullPath.startsWith(projectDir)) { res.status(400).send("Invalid path"); return; }
 
   try {
-    const content = await fs.readFile(fullPath, "utf8");
     const ext = path.extname(fullPath).slice(1).toLowerCase();
-    const mimeMap: Record<string, string> = {
+    // Text vs binary MIME types — binary files must be read as Buffer to avoid UTF-8 corruption
+    const textMimes: Record<string, string> = {
       html: "text/html", css: "text/css", js: "text/javascript", mjs: "text/javascript",
-      json: "application/json", svg: "image/svg+xml", png: "image/png",
-      jpg: "image/jpeg", jpeg: "image/jpeg", gif: "image/gif", webp: "image/webp",
-      md: "text/markdown", ts: "text/plain", tsx: "text/plain", txt: "text/plain",
+      cjs: "text/javascript", jsx: "text/javascript",
+      json: "application/json", svg: "image/svg+xml",
+      md: "text/markdown", txt: "text/plain",
+      ts: "text/plain", tsx: "text/plain", map: "application/json",
+      xml: "application/xml", wasm: "application/wasm",
     };
-    res.setHeader("Content-Type", mimeMap[ext] ?? "text/plain");
+    const binaryMimes: Record<string, string> = {
+      png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+      gif: "image/gif", webp: "image/webp", ico: "image/x-icon",
+      avif: "image/avif", bmp: "image/bmp",
+      woff: "font/woff", woff2: "font/woff2", ttf: "font/ttf", otf: "font/otf",
+      eot: "application/vnd.ms-fontobject",
+      pdf: "application/pdf", zip: "application/zip",
+    };
+
     res.setHeader("X-Frame-Options", "SAMEORIGIN");
-    res.send(content);
+    res.setHeader("Cache-Control", "public, max-age=3600");
+
+    if (binaryMimes[ext]) {
+      const buf = await fs.readFile(fullPath); // Buffer — no UTF-8 decode
+      res.setHeader("Content-Type", binaryMimes[ext]);
+      res.send(buf);
+    } else {
+      const content = await fs.readFile(fullPath, "utf8");
+      res.setHeader("Content-Type", textMimes[ext] ?? "text/plain");
+      res.send(content);
+    }
   } catch {
     res.status(404).send("File not found");
   }

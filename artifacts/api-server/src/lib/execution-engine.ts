@@ -26,8 +26,8 @@
  * Chat only sees: Planning → Generating → Building → Testing → Verifying → Fixing → Ready
  */
 
-import { db } from "@workspace/db";
-import { sql } from "drizzle-orm";
+import { db, aiProviderKeysTable } from "@workspace/db";
+import { sql, count } from "drizzle-orm";
 import { buildSpec, saveSpec } from "@workspace/ai-orchestrator";
 import type { ExecutionSpec, ProjectUnderstanding } from "@workspace/ai-orchestrator";
 import fs from "node:fs/promises";
@@ -665,8 +665,14 @@ function buildCheckDefs(a: BlueprintAnalysis, outcomes: StageOutcomes = {}): Che
       id: "missing_deps", name: "Missing Dependencies", domain: "build", weight: 8,
       run: async () => {
         await sleep(jitter(180));
-        if (a.techStack.length === 0) return { ok: false, detail: "no tech stack detected" };
-        return { ok: true, detail: `${a.techStack.length} packages resolved` };
+        // Use real install result if available (from stage 3)
+        if (outcomes.installOk !== undefined) {
+          return outcomes.installOk
+            ? { ok: true, detail: `packages installed successfully · ${a.techStack.length} stack items` }
+            : { ok: false, detail: "npm install failed — check generated package.json" };
+        }
+        if (a.techStack.length === 0) return { ok: false, detail: "no tech stack detected in blueprint" };
+        return { ok: true, skipped: true, detail: "install not run — skipped" };
       },
     },
 
@@ -676,50 +682,50 @@ function buildCheckDefs(a: BlueprintAnalysis, outcomes: StageOutcomes = {}): Che
       run: async () => {
         await sleep(jitter(220));
         if (!a.hasTypeScript) return { ok: true, skipped: true, detail: "JS project — skipped" };
-        // Use real tsc result if available (from stage 6).
-        // Generated code often has minor type issues — treat as skipped (non-fatal) rather than fail.
         if (outcomes.typeCheckOk !== undefined) {
           return outcomes.typeCheckOk
             ? { ok: true, detail: "0 type errors (tsc --noEmit passed)" }
             : { ok: true, skipped: true, detail: "type warnings present — non-fatal for generated code" };
         }
-        // Fallback: always skip for generated code since models often emit minor type issues
-        return { ok: true, skipped: true, detail: "skipped — type-checked in stage 6" };
+        return { ok: true, skipped: true, detail: "type-checked in stage 6" };
       },
     },
     {
+      // Cannot statically verify imports without running tsc on generated files.
       id: "missing_imports", name: "Missing Imports", domain: "typescript", weight: 7,
       run: async () => {
         await sleep(jitter(150));
-        if (!a.hasTypeScript && !a.hasFrontend) return { ok: true, skipped: true, detail: "skipped" };
-        return { ok: true, detail: "all imports resolved" };
+        return { ok: true, skipped: true, detail: "static import analysis not available — see stage 6 tsc output" };
       },
     },
     {
       id: "missing_exports", name: "Missing Exports", domain: "typescript", weight: 6,
       run: async () => {
         await sleep(jitter(130));
-        if (!a.hasTypeScript) return { ok: true, skipped: true, detail: "skipped" };
-        return { ok: true, detail: "all exports present" };
+        return { ok: true, skipped: true, detail: "static export analysis not available — see stage 6 tsc output" };
       },
     },
     {
       id: "circular_imports", name: "Circular Imports", domain: "typescript", weight: 5,
       run: async () => {
         await sleep(jitter(140));
-        if (!a.hasTypeScript) return { ok: true, skipped: true, detail: "skipped" };
-        return { ok: true, detail: "no cycles detected" };
+        return { ok: true, skipped: true, detail: "circular import detection requires runtime analysis — skipped" };
       },
     },
 
     // ── Frontend domain ──────────────────────────────────────────────────
     {
+      // Component health is only verifiable after a successful build.
       id: "broken_components", name: "Broken Components", domain: "frontend", weight: 8,
       run: async () => {
         await sleep(jitter(160));
-        if (!a.hasFrontend) return { ok: true, skipped: true, detail: "no frontend" };
-        if (a.components < 1) return { ok: false, detail: "no components detected in blueprint" };
-        return { ok: true, detail: `${a.components} components validated` };
+        if (!a.hasFrontend) return { ok: true, skipped: true, detail: "no frontend layer" };
+        if (outcomes.buildOk !== undefined) {
+          return outcomes.buildOk
+            ? { ok: true, detail: "build succeeded — component tree intact" }
+            : { ok: false, detail: "build failed — components may have errors, see stage 4 output" };
+        }
+        return { ok: true, skipped: true, detail: "component validation requires a successful build — skipped" };
       },
     },
     {
@@ -729,25 +735,27 @@ function buildCheckDefs(a: BlueprintAnalysis, outcomes: StageOutcomes = {}): Che
         if (!a.hasFrontend || !a.techStack.some(t => /next|remix/i.test(t))) {
           return { ok: true, skipped: true, detail: "SSR not detected — skipped" };
         }
-        return { ok: true, detail: "no hydration mismatches" };
+        return { ok: true, skipped: true, detail: "SSR hydration check requires browser runtime — skipped" };
       },
     },
     {
+      // React warnings require the app to be running in a browser — not checkable at build time.
       id: "react_warnings", name: "React Warnings", domain: "frontend", weight: 5,
       run: async () => {
         await sleep(jitter(120));
         if (!a.hasFrontend || !a.techStack.includes("React")) {
           return { ok: true, skipped: true, detail: "not a React project" };
         }
-        return { ok: true, detail: "0 warnings" };
+        return { ok: true, skipped: true, detail: "React warnings require browser runtime — skipped" };
       },
     },
     {
+      // Console errors require the app to be running in a browser — not checkable at build time.
       id: "console_errors", name: "Console Errors", domain: "frontend", weight: 6,
       run: async () => {
         await sleep(jitter(110));
-        if (!a.hasFrontend) return { ok: true, skipped: true, detail: "skipped" };
-        return { ok: true, detail: "0 console errors" };
+        if (!a.hasFrontend) return { ok: true, skipped: true, detail: "no frontend layer" };
+        return { ok: true, skipped: true, detail: "console error detection requires browser runtime — skipped" };
       },
     },
 
@@ -756,8 +764,14 @@ function buildCheckDefs(a: BlueprintAnalysis, outcomes: StageOutcomes = {}): Che
       id: "api_failures", name: "API Failures", domain: "backend", weight: 9,
       run: async () => {
         if (!a.hasBackend) return { ok: true, skipped: true, detail: "no backend layer" };
-        if (a.apiEndpoints < 1) return { ok: false, detail: "no endpoints defined in blueprint" };
-        return { ok: true, detail: `${a.apiEndpoints} endpoints validated` };
+        if (a.apiEndpoints < 1) return { ok: false, detail: "no API endpoints defined in blueprint" };
+        // Use real build result: if build passed, endpoints were compiled without errors
+        if (outcomes.buildOk !== undefined) {
+          return outcomes.buildOk
+            ? { ok: true, detail: `${a.apiEndpoints} endpoint(s) compiled successfully` }
+            : { ok: false, detail: "build failed — API routes may have errors" };
+        }
+        return { ok: true, skipped: true, detail: "API verification requires a running server — skipped" };
       },
     },
     {
@@ -802,136 +816,71 @@ function buildCheckDefs(a: BlueprintAnalysis, outcomes: StageOutcomes = {}): Che
       id: "assets_loaded", name: "Assets Loaded", domain: "frontend", weight: 7,
       run: async () => {
         await sleep(jitter(140));
-        if (!a.hasFrontend) return { ok: true, skipped: true, detail: "no frontend" };
-        if (a.components < 1) return { ok: false, detail: "no component assets detected" };
-        return { ok: true, detail: `${a.components} component assets resolved` };
+        if (!a.hasFrontend) return { ok: true, skipped: true, detail: "no frontend layer" };
+        // Asset loading is only verifiable after a successful build produces dist/
+        if (outcomes.buildOk !== undefined) {
+          return outcomes.buildOk
+            ? { ok: true, detail: "build produced dist/ — assets compiled and bundled" }
+            : { ok: false, detail: "build failed — assets were not compiled" };
+        }
+        return { ok: true, skipped: true, detail: "asset check requires a completed build — skipped" };
       },
     },
   ];
 }
 
 // ── Self-healing strategies ───────────────────────────────────────────────────
+//
+// Honest healing: no source-file changes happen during this loop.
+// The only checks that can be marked "healed" are ones where the outcome
+// genuinely changes without touching code (e.g. our own server was already
+// running, so runtime_errors is actually fine).  Everything else that reaches
+// healCheck represents a real failure that requires LLM-assisted repair or
+// manual intervention — we report it honestly rather than faking success.
 
 interface HealResult { healed: boolean; strategy: string; detail: string }
 
 async function healCheck(
   checkId: string,
-  iteration: number,
-  analysis: BlueprintAnalysis,
+  _iteration: number,
+  _analysis: BlueprintAnalysis,
 ): Promise<HealResult> {
+  await sleep(jitter(400, 0.3));
 
-  const strategies: Record<string, string[]> = {
-    build_success: [
-      "Resolving build configuration from blueprint architecture",
-      "Applying project scaffold from detected tech stack",
-      "Re-initializing with minimal viable configuration",
-    ],
-    build_errors: [
-      "Patching build config for detected framework",
-      "Clearing stale cache and restarting build",
-      "Falling back to last known-good build configuration",
-    ],
-    missing_deps: [
-      "Resolving dependency tree from blueprint requirements",
-      "Installing missing packages from package registry",
-      "Pinning compatible dependency versions",
-    ],
-    ts_errors: [
-      "Inferring missing types from API contract definitions",
-      "Adding strict null checks and type guards",
-      "Generating type declarations from schema definitions",
-    ],
-    missing_imports: [
-      "Resolving import paths from blueprint module map",
-      "Adding barrel exports for detected module boundaries",
-      "Fixing relative import paths from file structure",
-    ],
-    missing_exports: [
-      "Exporting missing symbols from module definitions",
-      "Generating index.ts barrel from detected exports",
-      "Adding re-exports for cross-module dependencies",
-    ],
-    circular_imports: [
-      "Extracting shared types to break dependency cycle",
-      "Introducing interface layer to decouple modules",
-      "Reordering module initialization order",
-    ],
-    broken_components: [
-      "Regenerating component props from blueprint spec",
-      "Fixing missing required props and default values",
-      "Replacing broken renders with error boundaries",
-    ],
-    hydration_errors: [
-      "Wrapping dynamic content in useEffect for client-only rendering",
-      "Moving window/document access to client boundary",
-      "Adding Suspense boundaries for async components",
-    ],
-    react_warnings: [
-      "Adding missing key props to list renders",
-      "Fixing useEffect dependency arrays",
-      "Resolving controlled/uncontrolled component conflicts",
-    ],
-    console_errors: [
-      "Adding error boundaries to catch runtime throws",
-      "Fixing null reference access in component renders",
-      "Adding defensive checks for undefined data",
-    ],
-    api_failures: [
-      "Normalizing endpoint definitions from blueprint API spec",
-      "Fixing CORS headers and response shape",
-      "Adding missing route handlers from blueprint",
-    ],
-    runtime_errors: [
-      "Fixing server startup sequence and port binding",
-      "Resolving missing middleware initialization",
-      "Adding error handling to async route handlers",
-    ],
-    missing_routes: [
-      "Generating route definitions from blueprint page map",
-      "Adding missing API routes from endpoint definitions",
-      "Fixing router configuration for detected pages",
-    ],
-    db_connection: [
-      "Validating DATABASE_URL format and credentials",
-      "Switching to connection pooling for reliability",
-      "Adding connection retry with exponential backoff",
-    ],
-    env_vars: [
-      "Loading environment variables from .env file",
-      "Injecting required variables from deployment config",
-      "Adding fallback values for optional variables",
-    ],
-    broken_preview: [
-      "Restarting dev server on available port",
-      "Fixing Vite proxy configuration",
-      "Clearing HMR state and reloading",
-    ],
+  // Human-readable description of what would be needed to fix each check type.
+  const actions: Record<string, string> = {
+    build_success:   "Re-run with a corrected package.json / entry point",
+    build_errors:    "Fix TypeScript / syntax errors in the generated source files",
+    missing_deps:    "Correct package names in package.json and re-run npm install",
+    ts_errors:       "Resolve type errors reported by tsc (non-fatal for generated code)",
+    missing_imports: "Add the missing import statements to the generated files",
+    missing_exports: "Export the required symbols from the relevant modules",
+    circular_imports:"Refactor shared types into a separate module to break the cycle",
+    broken_components:"Fix component prop types and re-run the build",
+    hydration_errors: "Wrap client-only code in useEffect or dynamic imports",
+    react_warnings:  "Fix key props, useEffect deps, and controlled/uncontrolled conflicts",
+    console_errors:  "Add null guards and error boundaries to the generated components",
+    api_failures:    "Correct the API route handlers and re-build the project",
+    runtime_errors:  "Check the generated server startup code for port/middleware errors",
+    missing_routes:  "Add the missing route definitions to the router configuration",
+    db_connection:   "Set DATABASE_URL to a valid connection string",
+    env_vars:        "Configure the required environment variables in the Secrets panel",
+    broken_preview:  "Ensure the build succeeded and dist/index.html was generated",
+    assets_loaded:   "Re-run the build so Vite compiles and bundles all assets",
   };
 
-  const strats = strategies[checkId] ?? [
-    "Applying generic fix based on error pattern",
-    "Re-running with relaxed validation",
-    "Skipping optional check and continuing",
-  ];
+  const action = actions[checkId] ?? "Manual review required — no automated fix available";
 
-  const strategyText = strats[Math.min(iteration, strats.length - 1)] ?? strats[0]!;
-  await sleep(jitter(600, 0.5));
-
-  // Determine if fix succeeds — most checks heal by iteration 2 if blueprint is buildable
-  const canHeal =
-    analysis.buildable &&
-    !["db_connection", "runtime_errors"].includes(checkId) ||
-    (checkId === "db_connection" && iteration >= 1) ||
-    (checkId === "runtime_errors" && iteration >= 1);
-
-  const healed = canHeal && (iteration < 2 || Math.random() > 0.15);
+  // runtime_errors probes OUR own API server (port 8080), not the generated project.
+  // Our server is running (we're inside it), so this check auto-resolves on retry.
+  const selfResolves = checkId === "runtime_errors";
 
   return {
-    healed,
-    strategy: strategyText,
-    detail: healed
-      ? `Fixed in iteration ${iteration + 1}: ${strategyText.toLowerCase()}`
-      : `Iteration ${iteration + 1} failed — ${strategyText.toLowerCase()}`,
+    healed: selfResolves,
+    strategy: action,
+    detail: selfResolves
+      ? "Confirmed: API server is healthy"
+      : `Automated fix not possible: ${action}`,
   };
 }
 
@@ -1261,6 +1210,35 @@ export class ExecutionService {
       send({ type: "exec_stage_complete", stage: 1, duration: Date.now() - t });
     }
 
+    // ── Pre-flight: verify at least one LLM provider is reachable ──────────────
+    // Without a provider, all LLM batches silently produce 0 files. Fail fast
+    // with a clear, actionable message so the user knows exactly what to fix.
+    if (signal?.aborted) return;
+    {
+      const hasEnvKey = Boolean(process.env["OPENROUTER_API_KEY"]);
+      let hasDbKey = false;
+      try {
+        const [row] = await db
+          .select({ n: count() })
+          .from(aiProviderKeysTable)
+          .limit(1);
+        hasDbKey = (row?.n ?? 0) > 0;
+      } catch { /* DB unavailable — fall through */ }
+
+      if (!hasEnvKey && !hasDbKey) {
+        send({
+          type: "exec_error",
+          message:
+            "No AI provider configured. " +
+            "Set OPENROUTER_API_KEY in the Secrets panel (🔒 in the sidebar) " +
+            "or add a provider key in Settings → AI Providers. " +
+            "Without a key the AI cannot write source files.",
+          retryable: false,
+        });
+        return;
+      }
+    }
+
     // ── Stage 2: Generating — buildSpec via LLM + write ALL project files to disk ─
     if (signal?.aborted) return;
     {
@@ -1371,13 +1349,15 @@ export class ExecutionService {
       if (pkgJsonExists) {
         // Real npm install — streams stdout/stderr back via SSE
         const ok3 = await spawnShellStage(3, send, signal, projectDir, "npm",
-          ["install", "--no-audit", "--no-fund", "--prefer-offline"], 180_000);
+          ["install", "--no-audit", "--no-fund"], 180_000);
+        stageOutcomes.installOk = ok3;
         if (!ok3 || signal?.aborted) {
           // Non-fatal: continue anyway, build might still work if deps are cached
           if (signal?.aborted) return;
         }
       } else {
         await runStage(3, 200, send, signal);
+        stageOutcomes.installOk = true; // no package.json = static project, treat as OK
       }
     }
 
