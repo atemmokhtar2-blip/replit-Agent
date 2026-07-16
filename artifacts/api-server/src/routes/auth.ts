@@ -7,8 +7,8 @@
 
 import { Router } from "express";
 import { z } from "zod";
-import { db, usersTable, refreshTokensTable } from "@workspace/db";
-import { eq, and } from "drizzle-orm";
+import { db, usersTable, refreshTokensTable, passwordResetTokensTable } from "@workspace/db";
+import { eq, and, lt } from "drizzle-orm";
 import {
   generateId,
   hashPassword,
@@ -18,6 +18,8 @@ import {
   hashRefreshToken,
   REFRESH_TOKEN_TTL_SECONDS,
   generatePasswordResetToken,
+  hashPasswordResetToken,
+  resetTokenExpiresAt,
 } from "../lib/auth";
 import { authenticate } from "../middlewares/authenticate";
 import { validateBody } from "../middlewares/validate";
@@ -25,6 +27,8 @@ import { recordAuditLog } from "../middlewares/audit";
 import { eventBus, PlatformEvents } from "../lib/events";
 import { oauthRegistry } from "../lib/oauth/registry";
 import { generateOAuthState, verifyOAuthState } from "../lib/oauth/state";
+import { authLimiter } from "../middlewares/rate-limit";
+import { sendMail, passwordResetEmail } from "../lib/mailer";
 
 const router = Router();
 
@@ -117,7 +121,7 @@ async function generateUniqueUsername(base: string): Promise<string> {
 
 // ─── POST /register ───────────────────────────────────────────────────────────
 
-router.post("/register", validateBody(registerSchema), async (req, res) => {
+router.post("/register", authLimiter, validateBody(registerSchema), async (req, res) => {
   const { username, email, password } = req.body as z.infer<typeof registerSchema>;
 
   const existing = await db
@@ -173,7 +177,7 @@ router.post("/register", validateBody(registerSchema), async (req, res) => {
 
 // ─── POST /login ──────────────────────────────────────────────────────────────
 
-router.post("/login", validateBody(loginSchema), async (req, res) => {
+router.post("/login", authLimiter, validateBody(loginSchema), async (req, res) => {
   const { email, password } = req.body as z.infer<typeof loginSchema>;
 
   const [user] = await db
@@ -279,25 +283,61 @@ router.post("/refresh", validateBody(refreshSchema), async (req, res) => {
 
 // ─── POST /forgot-password ────────────────────────────────────────────────────
 
-router.post("/forgot-password", validateBody(forgotPasswordSchema), async (req, res) => {
+router.post("/forgot-password", authLimiter, validateBody(forgotPasswordSchema), async (req, res) => {
   const { email } = req.body as z.infer<typeof forgotPasswordSchema>;
 
   const [user] = await db
-    .select({ id: usersTable.id, email: usersTable.email })
+    .select({ id: usersTable.id, email: usersTable.email, username: usersTable.username })
     .from(usersTable)
     .where(eq(usersTable.email, email.toLowerCase()))
     .limit(1);
 
+  // Always respond the same way — do not reveal whether the email exists
   if (user) {
-    const token = generatePasswordResetToken();
+    // Invalidate any existing unused tokens for this user
+    await db
+      .delete(passwordResetTokensTable)
+      .where(eq(passwordResetTokensTable.userId, user.id));
+
+    const rawToken  = generatePasswordResetToken();
+    const tokenHash = hashPasswordResetToken(rawToken);
+
+    await db.insert(passwordResetTokensTable).values({
+      id:        generateId(),
+      userId:    user.id,
+      tokenHash,
+      expiresAt: resetTokenExpiresAt(),
+      isUsed:    false,
+    });
+
+    // Build reset URL — prefer explicit APP_URL, then Replit domains
+    const baseUrl =
+      process.env["APP_URL"] ??
+      (process.env["REPLIT_DOMAINS"]
+        ? `https://${process.env["REPLIT_DOMAINS"]!.split(",")[0]!.trim()}`
+        : process.env["REPLIT_DEV_DOMAIN"]
+        ? `https://${process.env["REPLIT_DEV_DOMAIN"]}`
+        : "http://localhost:5000");
+
+    const resetUrl = `${baseUrl}/auth/reset-password?token=${rawToken}`;
+
+    try {
+      await sendMail({
+        to: user.email,
+        ...passwordResetEmail({ resetUrl, username: user.username }),
+      });
+    } catch {
+      // Log internally but don't expose to caller — token is already stored
+    }
+
     await recordAuditLog("user.password_reset_requested", {
       userId: user.id,
       metadata: { token_generated: true },
     });
     eventBus.dispatch(PlatformEvents.USER_PASSWORD_RESET_REQUESTED, {
       userId: user.id,
-      email: user.email,
-      token,
+      email:  user.email,
+      token:  rawToken,
     });
   }
 
@@ -306,8 +346,65 @@ router.post("/forgot-password", validateBody(forgotPasswordSchema), async (req, 
 
 // ─── POST /reset-password ─────────────────────────────────────────────────────
 
-router.post("/reset-password", validateBody(resetPasswordSchema), async (_req, res) => {
-  res.status(501).json({ error: "Password reset requires email configuration. Coming soon." });
+router.post("/reset-password", authLimiter, validateBody(resetPasswordSchema), async (req, res) => {
+  const { token: rawToken, password } = req.body as z.infer<typeof resetPasswordSchema>;
+
+  const tokenHash = hashPasswordResetToken(rawToken);
+  const now = new Date();
+
+  const [stored] = await db
+    .select()
+    .from(passwordResetTokensTable)
+    .where(
+      and(
+        eq(passwordResetTokensTable.tokenHash, tokenHash),
+        eq(passwordResetTokensTable.isUsed, false),
+      ),
+    )
+    .limit(1);
+
+  if (!stored || stored.expiresAt < now) {
+    res.status(400).json({ error: "Invalid or expired password reset token." });
+    return;
+  }
+
+  const passwordHash = await hashPassword(password);
+
+  // Update password and mark token used in a transaction
+  await db.transaction(async (tx) => {
+    await tx
+      .update(usersTable)
+      .set({ passwordHash, updatedAt: new Date() })
+      .where(eq(usersTable.id, stored.userId));
+
+    await tx
+      .update(passwordResetTokensTable)
+      .set({ isUsed: true })
+      .where(eq(passwordResetTokensTable.id, stored.id));
+
+    // Revoke all active refresh tokens for this user (force re-login everywhere)
+    await tx
+      .update(refreshTokensTable)
+      .set({ isRevoked: true })
+      .where(
+        and(
+          eq(refreshTokensTable.userId, stored.userId),
+          eq(refreshTokensTable.isRevoked, false),
+        ),
+      );
+  });
+
+  // Clean up expired tokens in the background (best effort)
+  db.delete(passwordResetTokensTable)
+    .where(lt(passwordResetTokensTable.expiresAt, now))
+    .catch(() => {/* non-critical */});
+
+  await recordAuditLog("user.password_reset_completed", {
+    userId: stored.userId,
+    metadata: {},
+  });
+
+  res.json({ message: "Password reset successfully. Please sign in with your new password." });
 });
 
 // ─── GET /oauth/providers — list which providers are available ────────────────

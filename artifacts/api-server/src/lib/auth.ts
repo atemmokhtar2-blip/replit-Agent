@@ -11,10 +11,31 @@ import bcrypt from "bcryptjs";
 import crypto from "crypto";
 import type { UserRole } from "@workspace/db";
 
-const ACCESS_TOKEN_SECRET = process.env["JWT_SECRET"] ?? "dev-access-secret-change-in-production";
-const REFRESH_TOKEN_SECRET = process.env["JWT_REFRESH_SECRET"] ?? "dev-refresh-secret-change-in-production";
+// ── Startup secret validation — hard-fail in production if secrets not set ────
+function requireSecret(name: string, devFallback?: string): string {
+  const value = process.env[name];
+  if (value) return value;
 
-export const ACCESS_TOKEN_TTL = "15m";
+  if (process.env["NODE_ENV"] === "production") {
+    throw new Error(
+      `[auth] FATAL: ${name} environment variable is not set. ` +
+      `The server cannot start securely in production without it. ` +
+      `Generate one with: openssl rand -hex 64`,
+    );
+  }
+
+  // Development-only fallback — warns loudly so it is never missed
+  console.warn(
+    `[auth] WARNING: ${name} is not set. Using an insecure dev fallback. ` +
+    `This MUST be fixed before any production deployment.`,
+  );
+  return devFallback!;
+}
+
+const ACCESS_TOKEN_SECRET  = requireSecret("JWT_SECRET",         "dev-access-secret-CHANGE-IN-PRODUCTION");
+const REFRESH_TOKEN_SECRET = requireSecret("JWT_REFRESH_SECRET",  "dev-refresh-secret-CHANGE-IN-PRODUCTION");
+
+export const ACCESS_TOKEN_TTL          = "15m";
 export const REFRESH_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60; // 7 days
 
 export interface JwtPayload {
@@ -62,17 +83,23 @@ export async function verifyPassword(password: string, hash: string): Promise<bo
 }
 
 // ─── UUID v4 Helper ───────────────────────────────────────────────────────────
-// Using crypto.randomUUID for IDs (Node 19+). Future phases can switch to uuid-v7
-// for time-ordered sortable IDs once the library is integrated.
 
 export function generateId(): string {
   return crypto.randomUUID();
 }
 
 // ─── Password Reset Tokens ────────────────────────────────────────────────────
-// Phase 1: tokens are generated but email delivery is a no-op.
-// Future phases will integrate an email provider and store tokens in DB.
+
+const RESET_TOKEN_TTL_SECONDS = 60 * 60; // 1 hour
 
 export function generatePasswordResetToken(): string {
   return crypto.randomBytes(32).toString("hex");
+}
+
+export function hashPasswordResetToken(token: string): string {
+  return crypto.createHash("sha256").update(token).digest("hex");
+}
+
+export function resetTokenExpiresAt(): Date {
+  return new Date(Date.now() + RESET_TOKEN_TTL_SECONDS * 1000);
 }

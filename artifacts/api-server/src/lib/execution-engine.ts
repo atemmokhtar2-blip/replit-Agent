@@ -588,11 +588,15 @@ async function generateCoreFiles(
 // (old callLLMForFileGeneration / generateAllProjectFiles removed — now handled by BatchFileGenerator)
 
 async function probeApiServer(): Promise<{ ok: boolean; detail: string; latencyMs: number }> {
+  // Derive server base from env so it works in any hosting environment
+  const port = process.env["PORT"] ?? "8080";
+  const selfBase = `http://localhost:${port}`;
   const targets = [
-    "http://localhost:8080/health",
-    "http://localhost:8080/",
+    `${selfBase}/healthz`,
+    `${selfBase}/health`,
+    `${selfBase}/`,
+    "http://localhost:8000/healthz",
     "http://localhost:8000/health",
-    "http://localhost:8000/",
   ];
   const t = Date.now();
   for (const url of targets) {

@@ -3,6 +3,7 @@ export * from "./projects";
 export * from "./notifications";
 export * from "./audit-logs";
 export * from "./refresh-tokens";
+export * from "./password-reset-tokens";
 export * from "./future";
 export * from "./providers";
 export * from "./repository-agent";
