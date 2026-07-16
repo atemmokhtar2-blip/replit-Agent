@@ -595,8 +595,6 @@ async function probeApiServer(): Promise<{ ok: boolean; detail: string; latencyM
     `${selfBase}/healthz`,
     `${selfBase}/health`,
     `${selfBase}/`,
-    "http://localhost:8000/healthz",
-    "http://localhost:8000/health",
   ];
   const t = Date.now();
   for (const url of targets) {
@@ -607,7 +605,7 @@ async function probeApiServer(): Promise<{ ok: boolean; detail: string; latencyM
       }
     } catch { /* try next */ }
   }
-  return { ok: false, detail: "not reachable on :8080 or :8000", latencyMs: Date.now() - t };
+  return { ok: false, detail: `not reachable on :${port}`, latencyMs: Date.now() - t };
 }
 
 // ── Check definitions ─────────────────────────────────────────────────────────

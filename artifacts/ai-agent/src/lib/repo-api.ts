@@ -1,6 +1,6 @@
 /**
  * Typed fetch helpers for Repository Agent API routes.
- * Uses the same /api prefix that Vite proxies to localhost:8000.
+ * Uses the same /api prefix that Vite proxies to localhost:8080.
  */
 
 function authHeader(): Record<string, string> {
