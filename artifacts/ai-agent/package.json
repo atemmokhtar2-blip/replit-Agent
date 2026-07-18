@@ -75,8 +75,15 @@
     "zod": "catalog:"
   },
   "dependencies": {
+    "@types/react-syntax-highlighter": "^15.5.13",
     "jszip": "^3.10.1",
+    "katex": "^0.18.0",
+    "mermaid": "^11.16.0",
     "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "react-syntax-highlighter": "^16.1.1",
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
+    "unist-util-visit": "^5.1.0"
   }
 }
