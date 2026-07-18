@@ -527,11 +527,11 @@ export default function ChatWorkspace() {
       {/* ── Sidebar ──────────────────────────────────────────────────────── */}
       <aside
         className={[
-          "flex flex-col border-r border-border/60 bg-background",
+          "flex flex-col border-r border-border/60 bg-background overflow-hidden",
           "absolute inset-y-0 left-0 z-30 w-72 transition-transform duration-200 ease-in-out",
           sidebarOpen ? "translate-x-0" : "-translate-x-full",
-          "md:relative md:z-auto md:translate-x-0 md:transition-all md:duration-200",
-          sidebarOpen ? "md:w-64 md:min-w-[16rem]" : "md:w-0 md:min-w-0 md:overflow-hidden md:border-0",
+          "md:relative md:z-auto md:translate-x-0 md:transition-[width] md:duration-300 md:ease-in-out",
+          sidebarOpen ? "md:w-64 md:min-w-[16rem] md:border-r" : "md:w-0 md:min-w-0 md:border-0",
         ].join(" ")}
         aria-label="Conversations"
       >
