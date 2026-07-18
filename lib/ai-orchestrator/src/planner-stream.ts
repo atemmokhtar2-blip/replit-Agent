@@ -32,26 +32,22 @@ const HF_SPACE_RETRIES   = 3;    // retry on cold-start / error events
 const HF_SPACE_RETRY_DELAY_MS = 8_000; // wait for Space to wake up
 
 // Primary thinking model — deepseek-r1 naturally emits <think>...</think> reasoning
-const THINKING_MODEL = "deepseek/deepseek-r1:free";
+const THINKING_MODEL = "deepseek/deepseek-r1";
 // Fallback thinking model if R1 unavailable
 const THINKING_FALLBACK_MODEL = "deepseek/deepseek-chat-v3-0324";
 
 // Architecture-focused models (sections 1-6): planning affinity
-// Only include models that work without credits (free tier or very cheap)
 const ARCH_MODELS = [
-  "google/gemma-2-9b-it:free",
-  "meta-llama/llama-3.2-3b-instruct:free",
-  "qwen/qwen3-8b:free",
-  "deepseek/deepseek-chat-v3-0324",
   "moonshotai/kimi-k2",
+  "deepseek/deepseek-chat-v3-0324",
+  "deepseek/deepseek-r1",
 ] as const;
 
 // Technical/delivery models (sections 7-12): coding + deployment affinity
 const TECH_MODELS = [
-  "qwen/qwen3-8b:free",
-  "google/gemma-2-9b-it:free",
   "deepseek/deepseek-chat-v3-0324",
   "moonshotai/kimi-k2",
+  "deepseek/deepseek-r1",
 ] as const;
 
 type PlannerModel = string;

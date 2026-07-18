@@ -17,7 +17,7 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const PLANNER_MODELS = [
   "moonshotai/kimi-k2",
   "deepseek/deepseek-chat-v3-0324",
-  "meta-llama/llama-3.1-8b-instruct:free",
+  "deepseek/deepseek-r1",
 ] as const;
 
 type PlannerModel = (typeof PLANNER_MODELS)[number];
