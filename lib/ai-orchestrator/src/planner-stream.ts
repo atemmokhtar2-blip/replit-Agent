@@ -812,40 +812,8 @@ async function runMultiModelBlueprint(
 
   let succeeded = false;
 
-  // ── Attempt 1: HF Space — two-phase (arch sections 1-6, then tech 7-12) ─────
-  // HF Space is the primary FREE provider; max 1900 tokens per call so we split.
-  onEvent({ type: "model_switch", stage: 3, toModel: "HF-Space", taskType: "architecture" });
-  try {
-    console.log("[HF_SPACE] Starting arch phase (sections 1-6)");
-    const archContent = await callHFSpace(archMessages, HF_SPACE_MAX_TOKENS, 0.3, signal);
-
-    if (archContent && !signal.aborted) {
-      handleChunk(archContent, "HF-Space");
-      finalModel = "HF-Space (Qwen2.5-Coder)";
-
-      // Phase 2: sections 7-12
-      console.log("[HF_SPACE] Starting tech phase (sections 7-12)");
-      const techMessages = [
-        { role: "system", content: TECH_SYSTEM_PROMPT },
-        { role: "user", content: userMessage },
-        { role: "assistant", content: archContent },
-        { role: "user", content: "Now write sections 7-12 only." },
-      ];
-      const techContent = await callHFSpace(techMessages, HF_SPACE_MAX_TOKENS, 0.3, signal);
-
-      if (techContent && !signal.aborted) {
-        handleChunk("\n\n" + techContent, "HF-Space");
-        succeeded = true;
-        console.log(`[HF_SPACE] Both phases done, total length=${accumulated.length}`);
-      }
-    }
-  } catch (err) {
-    if (signal.aborted) return { content: accumulated, model: finalModel };
-    const msg = err instanceof Error ? err.message : String(err);
-    console.warn(`[HF_SPACE_FAILED] falling back to OpenRouter: ${msg.slice(0, 120)}`);
-  }
-
-  // ── Attempt 2: OpenRouter streaming models ────────────────────────────────
+  // ── Attempt 1: OpenRouter streaming models (skip HF Space when key is set) ──
+  // HF Space is only used as a last resort when no OpenRouter key is available.
   if (!succeeded && apiKey && !signal.aborted) {
     onEvent({ type: "model_switch", stage: 3, toModel: ARCH_MODELS[0] as string, taskType: "architecture" });
 
