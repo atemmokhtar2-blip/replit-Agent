@@ -36,14 +36,14 @@ const THINKING_FALLBACK_MODEL = "deepseek/deepseek-chat-v3-0324";
 const ARCH_MODELS = [
   "moonshotai/kimi-k2",
   "deepseek/deepseek-chat-v3-0324",
-  "openai/gpt-oss-20b:free",
+  "meta-llama/llama-3.1-8b-instruct:free",
 ] as const;
 
 // Technical/delivery models (sections 7-12): coding + deployment affinity
 const TECH_MODELS = [
   "deepseek/deepseek-chat-v3-0324",
   "moonshotai/kimi-k2",
-  "openai/gpt-oss-20b:free",
+  "meta-llama/llama-3.1-8b-instruct:free",
 ] as const;
 
 type PlannerModel = string;
