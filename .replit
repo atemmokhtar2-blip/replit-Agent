@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "web", "bash"]
+modules = ["nodejs-20", "web", "bash", "postgresql-16"]
 
 [deployment]
 router = "application"
@@ -24,7 +24,7 @@ args = "Start application"
 
 [[workflows.workflow.tasks]]
 task = "workflow.run"
-args = "Start Backend"
+args = "artifacts/api-server: API Server"
 
 [[workflows.workflow]]
 name = "Start application"
@@ -39,7 +39,7 @@ args = "cd artifacts/ai-agent && pnpm run dev"
 waitForPort = 5000
 
 [[workflows.workflow]]
-name = "Start Backend"
+name = "artifacts/api-server: API Server"
 author = "agent"
 
 [workflows.workflow.metadata]
@@ -47,7 +47,7 @@ outputType = "console"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "PORT=8080 node --enable-source-maps ./artifacts/api-server/dist/index.mjs"
+args = "pnpm --filter @workspace/api-server run dev"
 
 [agent]
 stack = "BEST_EFFORT_FALLBACK"
