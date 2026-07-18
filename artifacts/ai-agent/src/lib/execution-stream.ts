@@ -13,6 +13,8 @@
  *   exec_error                      — unrecoverable error (retryable flag)
  */
 
+import { getAccessToken, forceRefresh } from "./token-manager";
+
 export type ExecVerifyStatus =
   | "pass" | "fail" | "skip" | "checking" | "fixing" | "fixed" | "unfixable";
 
@@ -113,8 +115,9 @@ export async function streamToExecutionEngine(
   onEvent: (event: ExecutionStreamEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  const { getAccessToken } = await import("./token-manager");
-  const token = await getAccessToken();
+  let token = await getAccessToken();
+  if (!token) token = await forceRefresh();
+  if (!token) throw new Error("Session expired — please sign in again.");
 
   const response = await fetch("/api/v1/ai/execute/stream", {
     method: "POST",

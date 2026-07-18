@@ -1,5 +1,6 @@
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ThemeProvider } from "@/components/ThemeProvider";
@@ -9,56 +10,32 @@ import { AppLayout } from "@/components/AppLayout";
 import { TaskProvider } from "@/lib/task-store";
 import { SevenIntro, hasSeenIntro } from "@/components/SevenIntro";
 import { Logo } from "@/components/Logo";
-import { useEffect, useState } from "react";
 
-import NotFound from "@/pages/not-found";
+// ── Lazy-loaded pages (reduces initial bundle size) ─────────────────────────
+const NotFound         = lazy(() => import("@/pages/not-found"));
+const Landing          = lazy(() => import("@/pages/Landing"));
+const Login            = lazy(() => import("@/pages/Login"));
+const Register         = lazy(() => import("@/pages/Register"));
+const ForgotPassword   = lazy(() => import("@/pages/ForgotPassword"));
+const ResetPassword    = lazy(() => import("@/pages/ResetPassword"));
+const OAuthCallback    = lazy(() => import("@/pages/OAuthCallback"));
+const Dashboard        = lazy(() => import("@/pages/Dashboard"));
+const Projects         = lazy(() => import("@/pages/Projects"));
+const ProjectWorkspace = lazy(() => import("@/pages/ProjectWorkspace"));
+const Repositories     = lazy(() => import("@/pages/Repositories"));
+const SecretsCenter    = lazy(() => import("@/pages/SecretsCenter"));
+const Settings         = lazy(() => import("@/pages/Settings"));
+const Notifications    = lazy(() => import("@/pages/Notifications"));
+const Admin            = lazy(() => import("@/pages/Admin"));
+const ChatWorkspace    = lazy(() => import("@/pages/ChatWorkspace"));
+const Workspaces       = lazy(() => import("@/pages/Workspaces"));
+const AIEngine         = lazy(() => import("@/pages/AIEngine"));
+const AIProvidersPage  = lazy(() => import("@/pages/AIProvidersPage"));
+const AIModelsPage     = lazy(() => import("@/pages/AIModelsPage"));
+const Profile          = lazy(() => import("@/pages/Profile"));
 
-import Landing from "@/pages/Landing";
-import Login from "@/pages/Login";
-import Register from "@/pages/Register";
-import ForgotPassword from "@/pages/ForgotPassword";
-import ResetPassword from "@/pages/ResetPassword";
-import OAuthCallback from "@/pages/OAuthCallback";
-
-import Dashboard from "@/pages/Dashboard";
-import Projects from "@/pages/Projects";
-import ProjectWorkspace from "@/pages/ProjectWorkspace";
-import Repositories from "@/pages/Repositories";
-import SecretsCenter from "@/pages/SecretsCenter";
-import Settings from "@/pages/Settings";
-import Notifications from "@/pages/Notifications";
-import Admin from "@/pages/Admin";
-import ChatWorkspace from "@/pages/ChatWorkspace";
-import ControlCenter from "@/pages/ControlCenter";
-import Workspaces from "@/pages/Workspaces";
-import AIEngine from "@/pages/AIEngine";
-import AIProvidersPage from "@/pages/AIProvidersPage";
-import AIModelsPage from "@/pages/AIModelsPage";
-import Profile from "@/pages/Profile";
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      refetchOnWindowFocus: false,
-    },
-  },
-});
-
-// ── Root redirect ──────────────────────────────────────────────────────────────
-
-function RootPage() {
-  const { isAuthenticated, isLoading } = useAuth();
-  const [, setLocation] = useLocation();
-
-  useEffect(() => {
-    if (isLoading) return;
-    if (isAuthenticated) {
-      setLocation("/dashboard");
-    } else {
-      setLocation("/login");
-    }
-  }, [isLoading, isAuthenticated, setLocation]);
-
+// ── Loading fallback ────────────────────────────────────────────────────────
+function PageLoader() {
   return (
     <div className="flex h-screen w-full items-center justify-center bg-background">
       <Logo size="xl" animate="loading" variant="icon" />
@@ -66,160 +43,97 @@ function RootPage() {
   );
 }
 
-// ── Protected page wrappers ────────────────────────────────────────────────────
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: { refetchOnWindowFocus: false },
+  },
+});
 
+// ── Root redirect ────────────────────────────────────────────────────────────
+function RootPage() {
+  const { isAuthenticated, isLoading } = useAuth();
+  const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (isLoading) return;
+    setLocation(isAuthenticated ? "/chat" : "/login");
+  }, [isLoading, isAuthenticated, setLocation]);
+
+  return <PageLoader />;
+}
+
+// ── Protected page wrappers ──────────────────────────────────────────────────
 const ChatPage = () => (
-  <ProtectedRoute>
-    <AppLayout>
-      <ChatWorkspace />
-    </AppLayout>
-  </ProtectedRoute>
+  <ProtectedRoute><AppLayout><ChatWorkspace /></AppLayout></ProtectedRoute>
 );
-
 const DashboardPage = () => (
-  <ProtectedRoute>
-    <AppLayout>
-      <Dashboard />
-    </AppLayout>
-  </ProtectedRoute>
+  <ProtectedRoute><AppLayout><Dashboard /></AppLayout></ProtectedRoute>
 );
-
 const ProjectsPage = () => (
-  <ProtectedRoute>
-    <AppLayout>
-      <Projects />
-    </AppLayout>
-  </ProtectedRoute>
+  <ProtectedRoute><AppLayout><Projects /></AppLayout></ProtectedRoute>
 );
-
 const ProjectWorkspacePage = () => (
-  <ProtectedRoute>
-    <ProjectWorkspace />
-  </ProtectedRoute>
+  <ProtectedRoute><ProjectWorkspace /></ProtectedRoute>
 );
-
 const SettingsPage = () => (
-  <ProtectedRoute>
-    <AppLayout>
-      <Settings />
-    </AppLayout>
-  </ProtectedRoute>
+  <ProtectedRoute><AppLayout><Settings /></AppLayout></ProtectedRoute>
 );
-
 const NotificationsPage = () => (
-  <ProtectedRoute>
-    <AppLayout>
-      <Notifications />
-    </AppLayout>
-  </ProtectedRoute>
+  <ProtectedRoute><AppLayout><Notifications /></AppLayout></ProtectedRoute>
 );
-
 const AdminPage = () => (
-  <ProtectedRoute requireAdmin>
-    <AppLayout>
-      <Admin />
-    </AppLayout>
-  </ProtectedRoute>
+  <ProtectedRoute requireAdmin><AppLayout><Admin /></AppLayout></ProtectedRoute>
 );
-
-const ControlCenterPage = () => (
-  <ProtectedRoute>
-    <AppLayout>
-      <ControlCenter />
-    </AppLayout>
-  </ProtectedRoute>
-);
-
 const RepositoriesPage = () => (
-  <ProtectedRoute>
-    <AppLayout>
-      <Repositories />
-    </AppLayout>
-  </ProtectedRoute>
+  <ProtectedRoute><AppLayout><Repositories /></AppLayout></ProtectedRoute>
 );
-
 const SecretsCenterPage = () => (
-  <ProtectedRoute>
-    <AppLayout>
-      <SecretsCenter />
-    </AppLayout>
-  </ProtectedRoute>
+  <ProtectedRoute><AppLayout><SecretsCenter /></AppLayout></ProtectedRoute>
 );
-
 const WorkspacesPage = () => (
-  <ProtectedRoute>
-    <AppLayout>
-      <Workspaces />
-    </AppLayout>
-  </ProtectedRoute>
+  <ProtectedRoute><AppLayout><Workspaces /></AppLayout></ProtectedRoute>
 );
-
 const AIEnginePage = () => (
-  <ProtectedRoute>
-    <AppLayout>
-      <AIEngine />
-    </AppLayout>
-  </ProtectedRoute>
+  <ProtectedRoute><AppLayout><AIEngine /></AppLayout></ProtectedRoute>
 );
-
 const AIProvidersPageWrapper = () => (
-  <ProtectedRoute requireAdmin>
-    <AppLayout>
-      <AIProvidersPage />
-    </AppLayout>
-  </ProtectedRoute>
+  <ProtectedRoute requireAdmin><AppLayout><AIProvidersPage /></AppLayout></ProtectedRoute>
 );
-
 const AIModelsPageWrapper = () => (
-  <ProtectedRoute requireAdmin>
-    <AppLayout>
-      <AIModelsPage />
-    </AppLayout>
-  </ProtectedRoute>
+  <ProtectedRoute requireAdmin><AppLayout><AIModelsPage /></AppLayout></ProtectedRoute>
 );
-
 const ProfilePage = () => (
-  <ProtectedRoute>
-    <AppLayout>
-      <Profile />
-    </AppLayout>
-  </ProtectedRoute>
+  <ProtectedRoute><AppLayout><Profile /></AppLayout></ProtectedRoute>
 );
-
-const LandingPage       = () => <Landing />;
-const LoginPage         = () => <Login />;
-const RegisterPage      = () => <Register />;
-const ForgotPasswordPage = () => <ForgotPassword />;
-const ResetPasswordPage  = () => <ResetPassword />;
-const OAuthCallbackPage  = () => <OAuthCallback />;
 
 function Router() {
   return (
-    <Switch>
-      <Route path="/"                component={RootPage} />
-      <Route path="/landing"         component={LandingPage} />
-      <Route path="/login"           component={LoginPage} />
-      <Route path="/register"        component={RegisterPage} />
-      <Route path="/forgot-password" component={ForgotPasswordPage} />
-      <Route path="/reset-password"  component={ResetPasswordPage} />
-      <Route path="/auth/callback"   component={OAuthCallbackPage} />
-      <Route path="/chat"            component={ChatPage} />
-      <Route path="/dashboard"       component={DashboardPage} />
-      <Route path="/projects"        component={ProjectsPage} />
-      <Route path="/projects/:id"    component={ProjectWorkspacePage} />
-      <Route path="/settings"        component={SettingsPage} />
-      <Route path="/notifications"   component={NotificationsPage} />
-      <Route path="/admin"           component={AdminPage} />
-      <Route path="/control-center"  component={ControlCenterPage} />
-      <Route path="/repositories"    component={RepositoriesPage} />
-      <Route path="/secrets"         component={SecretsCenterPage} />
-      <Route path="/workspaces"      component={WorkspacesPage} />
-      <Route path="/ai-engine"       component={AIEnginePage} />
-      <Route path="/ai-providers"    component={AIProvidersPageWrapper} />
-      <Route path="/ai-models"       component={AIModelsPageWrapper} />
-      <Route path="/profile"         component={ProfilePage} />
-      <Route                         component={NotFound} />
-    </Switch>
+    <Suspense fallback={<PageLoader />}>
+      <Switch>
+        <Route path="/"                component={RootPage} />
+        <Route path="/landing"         component={() => <Landing />} />
+        <Route path="/login"           component={() => <Login />} />
+        <Route path="/register"        component={() => <Register />} />
+        <Route path="/forgot-password" component={() => <ForgotPassword />} />
+        <Route path="/reset-password"  component={() => <ResetPassword />} />
+        <Route path="/auth/callback"   component={() => <OAuthCallback />} />
+        <Route path="/chat"            component={ChatPage} />
+        <Route path="/dashboard"       component={DashboardPage} />
+        <Route path="/projects"        component={ProjectsPage} />
+        <Route path="/projects/:id"    component={ProjectWorkspacePage} />
+        <Route path="/settings"        component={SettingsPage} />
+        <Route path="/notifications"   component={NotificationsPage} />
+        <Route path="/admin"           component={AdminPage} />
+        <Route path="/repositories"    component={RepositoriesPage} />
+        <Route path="/secrets"         component={SecretsCenterPage} />
+        <Route path="/workspaces"      component={WorkspacesPage} />
+        <Route path="/ai-engine"       component={AIEnginePage} />
+        <Route path="/ai-providers"    component={AIProvidersPageWrapper} />
+        <Route path="/ai-models"       component={AIModelsPageWrapper} />
+        <Route path="/profile"         component={ProfilePage} />
+        <Route                         component={() => <NotFound />} />
+      </Switch>
+    </Suspense>
   );
 }
 
@@ -232,11 +146,9 @@ function App() {
         <AuthProvider>
           <TaskProvider>
             <TooltipProvider>
-              {/* Cinematic startup — shown once on first visit */}
               {!introComplete && (
                 <SevenIntro onComplete={() => setIntroComplete(true)} />
               )}
-
               <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
                 <Router />
                 <Toaster />

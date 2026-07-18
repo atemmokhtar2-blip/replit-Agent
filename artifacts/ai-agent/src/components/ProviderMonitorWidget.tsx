@@ -18,7 +18,7 @@ function useProviderStats() {
   return useQuery<ProviderStats>({
     queryKey: ["provider-stats"],
     queryFn: async () => {
-      const res = await apiFetch("/api/v1/ai-providers/stats") as Response;
+      const res = await apiFetch("/ai-providers/stats") as Response;
       const body = await res.json() as { ok: boolean; data: ProviderStats };
       if (!body.ok) throw new Error("Failed to fetch provider stats");
       return body.data;

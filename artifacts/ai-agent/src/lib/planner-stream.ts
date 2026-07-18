@@ -5,6 +5,8 @@
  * ReadableStream (EventSource does not support custom headers, so we roll our own).
  */
 
+import { getAccessToken, forceRefresh } from "./token-manager";
+
 export type PlannerStreamEvent =
   | { type: "stage_start"; stage: number; name: string }
   | { type: "stage_complete"; stage: number }
@@ -37,14 +39,16 @@ export async function streamToPlannerEngine(
   signal?: AbortSignal,
   repositoryId?: string,
 ): Promise<void> {
-  const { getAccessToken } = await import("./token-manager");
-  const token = await getAccessToken();
+  // Token is resolved by the module-level import (static, so HMR works)
+  let token = await getAccessToken();
+  if (!token) token = await forceRefresh();
+  if (!token) throw new Error("Session expired — please sign in again.");
 
   const response = await fetch("/api/v1/ai/planner/stream", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      Authorization: `Bearer ${token}`,
     },
     body: JSON.stringify({
       message,

@@ -61,7 +61,7 @@ interface RequestLog {
 
 // ── API helpers ───────────────────────────────────────────────────────────────
 
-const BASE = "/api/v1/ai-providers";
+const BASE = "/ai-providers";
 
 function useHealth() {
   return useQuery<SystemHealthReport>({

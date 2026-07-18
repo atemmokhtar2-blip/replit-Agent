@@ -16,7 +16,6 @@ import {
   X,
   PanelLeftClose,
   PanelLeftOpen,
-  Cpu,
   GitFork,
   KeyRound,
   Layers,
@@ -56,11 +55,11 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   }, [location, isDesktop]);
 
   const handleLogout = () => {
+    // Always clear local session – don't wait for API to succeed
+    const doLogout = () => { logout(); setLocation("/login"); };
     logoutMutation.mutate(undefined, {
-      onSuccess: () => {
-        logout();
-        setLocation("/login");
-      },
+      onSuccess: doLogout,
+      onError:   doLogout,
     });
   };
 
@@ -77,7 +76,6 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
     { href: "/secrets",       label: "Secrets",       icon: KeyRound },
     { href: "/ai-engine",     label: "AI Engine",     icon: BrainCircuit },
     { href: "/notifications", label: "Notifications", icon: Bell },
-    { href: "/control-center",label: "AI Control",    icon: Cpu },
     { href: "/settings",      label: "Settings",      icon: Settings },
   ];
 

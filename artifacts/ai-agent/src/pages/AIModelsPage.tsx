@@ -45,7 +45,7 @@ interface DiscoveryStatus {
 
 // ── API helpers ────────────────────────────────────────────────────────────────
 
-const BASE = "/api/v1/ai-providers";
+const BASE = "/ai-providers";
 
 function useModels(opts: { provider?: string; free?: boolean; category?: string; search?: string }) {
   return useQuery<{ models: DiscoveredModel[]; total: number }>({

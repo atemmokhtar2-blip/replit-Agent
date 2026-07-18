@@ -5,6 +5,8 @@
  * Reads the access token from localStorage automatically.
  */
 
+import { getAccessToken } from "./token-manager";
+
 export interface PlannerMessageResult {
   id: string;
   conversation_id: string;
@@ -26,7 +28,6 @@ export async function sendToPlannerEngine(
   message: string,
   conversationId: string,
 ): Promise<PlannerResponse> {
-  const { getAccessToken } = await import("./token-manager");
   const token = await getAccessToken();
 
   const response = await fetch("/api/v1/ai/planner", {
