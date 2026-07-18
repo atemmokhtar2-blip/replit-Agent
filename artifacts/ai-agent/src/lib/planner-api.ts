@@ -26,7 +26,8 @@ export async function sendToPlannerEngine(
   message: string,
   conversationId: string,
 ): Promise<PlannerResponse> {
-  const token = localStorage.getItem("access_token");
+  const { getAccessToken } = await import("./token-manager");
+  const token = await getAccessToken();
 
   const response = await fetch("/api/v1/ai/planner", {
     method: "POST",

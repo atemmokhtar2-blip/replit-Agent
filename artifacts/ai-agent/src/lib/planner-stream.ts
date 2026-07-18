@@ -37,7 +37,8 @@ export async function streamToPlannerEngine(
   signal?: AbortSignal,
   repositoryId?: string,
 ): Promise<void> {
-  const token = localStorage.getItem("access_token");
+  const { getAccessToken } = await import("./token-manager");
+  const token = await getAccessToken();
 
   const response = await fetch("/api/v1/ai/planner/stream", {
     method: "POST",

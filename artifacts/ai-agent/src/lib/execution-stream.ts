@@ -113,7 +113,8 @@ export async function streamToExecutionEngine(
   onEvent: (event: ExecutionStreamEvent) => void,
   signal?: AbortSignal,
 ): Promise<void> {
-  const token = localStorage.getItem("access_token");
+  const { getAccessToken } = await import("./token-manager");
+  const token = await getAccessToken();
 
   const response = await fetch("/api/v1/ai/execute/stream", {
     method: "POST",

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { useGetMe, getGetMeQueryKey } from "@workspace/api-client-react";
 import type { User, TokenPair } from "@workspace/api-client-react";
+import { forceRefresh, storeTokens, clearTokens as clearStoredTokens } from "../lib/token-manager";
 
 type AuthContextType = {
   user: User | null;
@@ -32,12 +33,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (error) {
-      // Only clear tokens on definitive auth failures (401/403).
-      // Network errors (server down) should not log the user out.
       const status = (error as { status?: number }).status;
-      if (status === 401 || status === 403) {
-        localStorage.removeItem("access_token");
-        localStorage.removeItem("refresh_token");
+      if (status === 401) {
+        // Try refreshing before giving up
+        forceRefresh().then((newToken) => {
+          if (!newToken) {
+            clearStoredTokens();
+            setTokens(null);
+          }
+          // If refresh succeeded, the token-manager stored the new tokens;
+          // TanStack Query will retry and succeed automatically.
+        });
+      } else if (status === 403) {
+        clearStoredTokens();
         setTokens(null);
       }
     }
