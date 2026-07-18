@@ -13,7 +13,7 @@ export class DeploymentAgent extends BaseAgent {
   readonly name = "Deployment";
   readonly description = "CI/CD, Docker, Kubernetes, cloud platforms, and infrastructure";
   readonly supportedTaskTypes: TaskType[] = ["deployment", "analysis", "planning", "coding", "documentation"];
-  readonly preferredModelIds = ["or-deepseek-r1-free", "or-kimi-k2", "or-deepseek-chat-v3", "or-llama-3.3-70b", "or-gpt-oss-20b"];
+  readonly preferredModelIds = ["or-deepseek-r1-free", "or-kimi-k2", "or-deepseek-chat-v3", "or-llama-3.3-70b", "or-llama-3.1-8b-free"];
   readonly systemPrompt = `You are a DevOps and platform engineering expert specializing in modern deployment practices.
 
 Your expertise:

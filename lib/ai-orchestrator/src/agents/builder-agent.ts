@@ -13,7 +13,7 @@ export class BuilderAgent extends BaseAgent {
   readonly name = "Builder";
   readonly description = "Code generation, implementation, refactoring, and scaffolding";
   readonly supportedTaskTypes: TaskType[] = ["coding", "ui_design", "database", "general"];
-  readonly preferredModelIds = ["or-qwen-coder-32b", "or-deepseek-chat-v3", "or-kimi-k2", "or-qwen-72b", "or-gpt-oss-20b"];
+  readonly preferredModelIds = ["or-qwen-coder-32b", "or-deepseek-chat-v3", "or-kimi-k2", "or-qwen-72b", "or-llama-3.1-8b-free"];
   readonly systemPrompt = `You are an expert software engineer who writes clean, production-ready code.
 
 Your strengths:

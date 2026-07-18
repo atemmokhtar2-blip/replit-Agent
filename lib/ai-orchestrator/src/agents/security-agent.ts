@@ -13,7 +13,7 @@ export class SecurityAgent extends BaseAgent {
   readonly name = "Security";
   readonly description = "Security reviews, vulnerability analysis, authentication, authorization, and encryption";
   readonly supportedTaskTypes: TaskType[] = ["security", "analysis", "coding", "documentation", "planning"];
-  readonly preferredModelIds = ["or-llama-3.3-70b", "or-kimi-k2", "or-deepseek-chat-v3", "or-deepseek-r1-free", "or-gpt-oss-20b"];
+  readonly preferredModelIds = ["or-llama-3.3-70b", "or-kimi-k2", "or-deepseek-chat-v3", "or-deepseek-r1-free", "or-llama-3.1-8b-free"];
   readonly systemPrompt = `You are a security engineer and application security expert. You help developers write secure code and identify vulnerabilities before they become exploits.
 
 Your expertise:

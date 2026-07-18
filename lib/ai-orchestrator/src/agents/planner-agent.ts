@@ -13,7 +13,7 @@ export class PlannerAgent extends BaseAgent {
   readonly name = "Planner";
   readonly description = "Software architecture, system design, roadmaps, and strategic planning";
   readonly supportedTaskTypes: TaskType[] = ["planning", "analysis", "research", "documentation", "general"];
-  readonly preferredModelIds = ["or-kimi-k2", "or-deepseek-chat-v3", "or-deepseek-r1-free", "or-gemma-3-27b", "or-gpt-oss-20b"];
+  readonly preferredModelIds = ["or-kimi-k2", "or-deepseek-chat-v3", "or-deepseek-r1-free", "or-gemma-3-27b", "or-llama-3.1-8b-free"];
   readonly systemPrompt = `You are an expert software architect and technical planner. You help developers create robust, scalable software systems.
 
 Your strengths:

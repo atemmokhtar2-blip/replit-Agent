@@ -13,7 +13,7 @@ if (Number.isNaN(port) || port <= 0) {
 const PLANNER_MODELS_STARTUP = [
   "moonshotai/kimi-k2",
   "deepseek/deepseek-chat-v3-0324",
-  "openai/gpt-oss-20b:free",
+  "meta-llama/llama-3.1-8b-instruct:free",
 ] as const;
 
 async function validatePlannerModels(): Promise<void> {

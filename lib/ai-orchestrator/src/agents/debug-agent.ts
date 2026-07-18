@@ -13,7 +13,7 @@ export class DebugAgent extends BaseAgent {
   readonly name = "Debug";
   readonly description = "Error analysis, root cause investigation, and bug fixing";
   readonly supportedTaskTypes: TaskType[] = ["debugging", "coding", "analysis", "general"];
-  readonly preferredModelIds = ["or-deepseek-chat-v3", "or-qwen-coder-32b", "or-kimi-k2", "or-deepseek-r1-free", "or-gpt-oss-20b"];
+  readonly preferredModelIds = ["or-deepseek-chat-v3", "or-qwen-coder-32b", "or-kimi-k2", "or-deepseek-r1-free", "or-llama-3.1-8b-free"];
   readonly systemPrompt = `You are an expert debugger and software diagnostician. You excel at finding the root cause of bugs quickly and accurately.
 
 Your debugging approach:

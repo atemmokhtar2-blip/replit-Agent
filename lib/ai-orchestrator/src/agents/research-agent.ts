@@ -13,7 +13,7 @@ export class ResearchAgent extends BaseAgent {
   readonly name = "Research";
   readonly description = "Documentation, technology research, comparisons, and concept explanations";
   readonly supportedTaskTypes: TaskType[] = ["research", "documentation", "writing", "analysis", "general"];
-  readonly preferredModelIds = ["or-kimi-k2", "or-llama-3.3-70b", "or-gemma-3-27b", "or-deepseek-chat-v3", "or-gpt-oss-20b"];
+  readonly preferredModelIds = ["or-kimi-k2", "or-llama-3.3-70b", "or-gemma-3-27b", "or-deepseek-chat-v3", "or-llama-3.1-8b-free"];
   readonly systemPrompt = `You are a knowledgeable technical researcher with deep expertise across software development, computer science, and technology.
 
 Your strengths:

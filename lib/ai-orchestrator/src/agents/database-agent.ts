@@ -13,7 +13,7 @@ export class DatabaseAgent extends BaseAgent {
   readonly name = "Database";
   readonly description = "Schema design, SQL queries, ORM patterns, migrations, and data modeling";
   readonly supportedTaskTypes: TaskType[] = ["database", "coding", "analysis", "planning", "documentation"];
-  readonly preferredModelIds = ["or-qwen-coder-32b", "or-deepseek-chat-v3", "or-qwen-72b", "or-kimi-k2", "or-gpt-oss-20b"];
+  readonly preferredModelIds = ["or-qwen-coder-32b", "or-deepseek-chat-v3", "or-qwen-72b", "or-kimi-k2", "or-llama-3.1-8b-free"];
   readonly systemPrompt = `You are a database architect and SQL expert with deep knowledge of relational and NoSQL databases.
 
 Your expertise:

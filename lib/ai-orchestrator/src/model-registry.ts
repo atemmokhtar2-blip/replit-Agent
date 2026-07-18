@@ -132,10 +132,10 @@ export const MODEL_CATALOG: ModelRegistryEntry[] = [
   },
   // ── Free fallback chain ────────────────────────────────────────────────────
   {
-    id: "or-gpt-oss-20b",
-    name: "GPT-OSS 20B (Free)",
+    id: "or-llama-3.1-8b-free",
+    name: "Llama 3.1 8B Instruct (Free)",
     providerSlug: "openrouter",
-    modelId: "openai/gpt-oss-20b:free",
+    modelId: "meta-llama/llama-3.1-8b-instruct:free",
     taskAffinity: ["planning", "coding", "debugging", "research", "analysis", "documentation", "general"],
     capabilities: { maxTokens: 8192, supportsStreaming: true, isFree: true, tags: ["versatile", "free", "fallback"] },
     priority: 5,

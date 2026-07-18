@@ -2,9 +2,9 @@
  * AI Planner Engine
  *
  * Routes exclusively through OpenRouter with a three-model fallback chain:
- *   1. openai/gpt-oss-20b:free       (primary)
- *   2. moonshotai/kimi-k2            (fallback 1)
- *   3. deepseek/deepseek-chat-v3-0324 (fallback 2)
+ *   1. moonshotai/kimi-k2            (primary)
+ *   2. deepseek/deepseek-chat-v3-0324 (fallback 1)
+ *   3. meta-llama/llama-3.1-8b-instruct:free (fallback 2)
  *
  * Environment variable required:
  *   OPENROUTER_API_KEY — API key from openrouter.ai
@@ -17,7 +17,7 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const PLANNER_MODELS = [
   "moonshotai/kimi-k2",
   "deepseek/deepseek-chat-v3-0324",
-  "openai/gpt-oss-20b:free",
+  "meta-llama/llama-3.1-8b-instruct:free",
 ] as const;
 
 type PlannerModel = (typeof PLANNER_MODELS)[number];
