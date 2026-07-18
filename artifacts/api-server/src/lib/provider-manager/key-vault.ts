@@ -7,7 +7,9 @@
  *   3. Deterministic fallback from NODE_ENV (dev only)
  *
  * Keys are NEVER logged or returned to clients in plaintext.
- * The UI only ever sees the `keyPrefix` (first 8 characters) for identification.
+ * The UI only ever sees the `keyPrefix` (first 20 characters) for identification.
+ * 20 chars is required because OpenRouter keys share the prefix "sk-or-v1-" (9 chars),
+ * so 8 chars was insufficient to distinguish between multiple keys from the same provider.
  */
 
 import crypto from "node:crypto";
@@ -71,7 +73,9 @@ export function decryptKey(ciphertext: string): string {
 // ── Safe prefix (for display) ─────────────────────────────────────────────────
 
 export function keyPrefix(plaintext: string): string {
-  return plaintext.slice(0, 8).padEnd(8, "*") + "…";
+  // 20 chars needed: OpenRouter keys all share "sk-or-v1-" (9 chars),
+  // so 8 was too short to deduplicate multiple keys from the same provider.
+  return plaintext.slice(0, 20).padEnd(20, "*") + "…";
 }
 
 // ── Mask for logs ─────────────────────────────────────────────────────────────
