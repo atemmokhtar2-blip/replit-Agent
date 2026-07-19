@@ -1,4 +1,4 @@
-import type { ProviderAdapter, LLMMessage, LLMOptions, ProviderError } from "../types.js";
+import type { ProviderAdapter, LLMMessage, LLMOptions, ProviderError, DiscoveredModel, ModelCategory } from "../types.js";
 
 const TIMEOUT_MS = 55_000;
 const BASE_URL   = "https://generativelanguage.googleapis.com/v1beta";
@@ -94,6 +94,54 @@ export const geminiAdapter: ProviderAdapter = {
       return { ok: resp.ok, latencyMs: Date.now() - t0, error: resp.ok ? undefined : `HTTP ${resp.status}` };
     } catch (err) {
       return { ok: false, latencyMs: Date.now() - t0, error: (err as Error).message };
+    }
+  },
+
+  async listModels(apiKey: string): Promise<DiscoveredModel[]> {
+    try {
+      const resp = await fetch(`${BASE_URL}/models?key=${apiKey}&pageSize=100`, {
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!resp.ok) return [];
+      const data = await resp.json() as { models?: Array<{
+        name: string; displayName?: string; description?: string;
+        inputTokenLimit?: number; outputTokenLimit?: number;
+        supportedGenerationMethods?: string[];
+      }> };
+      const models = data.models ?? [];
+      return models
+        .filter(m => m.supportedGenerationMethods?.includes("generateContent"))
+        .map(m => {
+          const id = m.name.replace("models/", "");
+          const nameL = id.toLowerCase();
+          const isFlash     = nameL.includes("flash");
+          const isPro       = nameL.includes("pro") || nameL.includes("ultra");
+          const isThinking  = nameL.includes("think");
+          const isFast      = isFlash || nameL.includes("nano") || nameL.includes("8b");
+          const isVision    = true; // all Gemini models support vision
+          const cats: ModelCategory[] = ["general", "free"];
+          if (isThinking) cats.push("reasoning");
+          if (isFast)     cats.push("fast");
+          if (isVision)   cats.push("vision");
+          return {
+            modelId:                 id,
+            displayName:             m.displayName ?? id,
+            description:             m.description,
+            contextLength:           m.inputTokenLimit,
+            maxOutputTokens:         m.outputTokenLimit,
+            isFree:                  true,
+            supportsVision:          isVision,
+            supportsTools:           isPro,
+            supportsFunctionCalling: isPro,
+            supportsReasoning:       isThinking,
+            supportsThinking:        isThinking,
+            supportsStreaming:        true,
+            categories:              cats,
+            rankScore:               isThinking ? 80 : isPro ? 70 : isFast ? 60 : 65,
+          };
+        });
+    } catch {
+      return [];
     }
   },
 

@@ -9,9 +9,9 @@
  */
 
 import { db } from "@workspace/db";
-import { aiDiscoveredModelsTable } from "@workspace/db";
+import { aiDiscoveredModelsTable, aiRequestLogTable } from "@workspace/db";
 import type { InsertAiDiscoveredModel } from "@workspace/db";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import type { DiscoveredModel, ModelCategory, ProviderAdapter } from "./types.js";
 
 const REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -79,20 +79,23 @@ function classifyOpenRouterModel(m: ORModel): DiscoveredModel {
   score = Math.min(100, Math.max(0, score));
 
   return {
-    modelId:           id,
-    displayName:       m.name ?? id,
-    description:       m.description,
+    modelId:                 id,
+    displayName:             m.name ?? id,
+    description:             m.description,
     contextLength,
-    inputPricePer1M:   inputPrice,
-    outputPricePer1M:  outputPrice,
+    maxOutputTokens:         m.top_provider?.max_completion_tokens,
+    inputPricePer1M:         inputPrice,
+    outputPricePer1M:        outputPrice,
     isFree,
     supportsVision,
     supportsTools,
-    supportsReasoning: isReasoning,
-    supportsStreaming:  supportsStream,
+    supportsFunctionCalling: supportsTools,
+    supportsReasoning:       isReasoning,
+    supportsThinking:        isReasoning,
+    supportsStreaming:        supportsStream,
     categories,
-    rankScore:         score,
-    rawMetadata:       m as unknown as Record<string, unknown>,
+    rankScore:               score,
+    rawMetadata:             m as unknown as Record<string, unknown>,
   };
 }
 
@@ -134,16 +137,18 @@ async function fetchGroqModels(apiKey: string): Promise<DiscoveredModel[]> {
       const cats: ModelCategory[] = ["general", "free"];
       if (isFast) cats.push("fast");
       return {
-        modelId:           id,
-        displayName:       id,
-        contextLength:     m.context_window,
-        isFree:            true,
-        supportsVision:    id.includes("vision"),
-        supportsTools:     true,
-        supportsReasoning: false,
-        supportsStreaming:  true,
-        categories:        cats,
-        rankScore:         isFast ? 55 : 65,
+        modelId:                 id,
+        displayName:             id,
+        contextLength:           m.context_window,
+        isFree:                  true,
+        supportsVision:          id.includes("vision"),
+        supportsTools:           true,
+        supportsFunctionCalling: true,
+        supportsReasoning:       false,
+        supportsThinking:        false,
+        supportsStreaming:        true,
+        categories:              cats,
+        rankScore:               isFast ? 55 : 65,
       };
     });
   } catch {
@@ -157,25 +162,28 @@ async function persistModels(providerSlug: string, models: DiscoveredModel[]): P
   if (models.length === 0) return 0;
 
   const rows: InsertAiDiscoveredModel[] = models.map(m => ({
-    id:                `${providerSlug}:${m.modelId}`,
+    id:                      `${providerSlug}:${m.modelId}`,
     providerSlug,
-    modelId:           m.modelId,
-    displayName:       m.displayName,
-    description:       m.description,
-    contextLength:     m.contextLength,
-    inputPricePer1M:   m.inputPricePer1M,
-    outputPricePer1M:  m.outputPricePer1M,
-    isFree:            m.isFree,
-    supportsVision:    m.supportsVision,
-    supportsTools:     m.supportsTools,
-    supportsReasoning: m.supportsReasoning,
-    supportsStreaming:  m.supportsStreaming,
-    categories:        m.categories,
-    rankScore:         m.rankScore,
-    priority:          50,
-    enabled:           true,
-    rawMetadata:       m.rawMetadata,
-    lastDiscoveredAt:  new Date(),
+    modelId:                 m.modelId,
+    displayName:             m.displayName,
+    description:             m.description,
+    contextLength:           m.contextLength,
+    maxOutputTokens:         m.maxOutputTokens,
+    inputPricePer1M:         m.inputPricePer1M,
+    outputPricePer1M:        m.outputPricePer1M,
+    isFree:                  m.isFree,
+    supportsVision:          m.supportsVision,
+    supportsTools:           m.supportsTools,
+    supportsFunctionCalling: m.supportsFunctionCalling,
+    supportsReasoning:       m.supportsReasoning,
+    supportsThinking:        m.supportsThinking,
+    supportsStreaming:        m.supportsStreaming,
+    categories:              m.categories,
+    rankScore:               m.rankScore,
+    priority:                50,
+    enabled:                 true,
+    rawMetadata:             m.rawMetadata,
+    lastDiscoveredAt:        new Date(),
   }));
 
   // Batch upsert in chunks
@@ -188,21 +196,24 @@ async function persistModels(providerSlug: string, models: DiscoveredModel[]): P
       .onConflictDoUpdate({
         target: aiDiscoveredModelsTable.id,
         set: {
-          displayName:       chunk[0].displayName,   // will be overridden by actual row
-          description:       aiDiscoveredModelsTable.description,
-          contextLength:     aiDiscoveredModelsTable.contextLength,
-          inputPricePer1M:   aiDiscoveredModelsTable.inputPricePer1M,
-          outputPricePer1M:  aiDiscoveredModelsTable.outputPricePer1M,
-          isFree:            aiDiscoveredModelsTable.isFree,
-          supportsVision:    aiDiscoveredModelsTable.supportsVision,
-          supportsTools:     aiDiscoveredModelsTable.supportsTools,
-          supportsReasoning: aiDiscoveredModelsTable.supportsReasoning,
-          supportsStreaming:  aiDiscoveredModelsTable.supportsStreaming,
-          categories:        aiDiscoveredModelsTable.categories,
-          rankScore:         aiDiscoveredModelsTable.rankScore,
-          rawMetadata:       aiDiscoveredModelsTable.rawMetadata,
-          lastDiscoveredAt:  new Date(),
-          updatedAt:         new Date(),
+          displayName:             sql`excluded.display_name`,
+          description:             sql`excluded.description`,
+          contextLength:           sql`excluded.context_length`,
+          maxOutputTokens:         sql`excluded.max_output_tokens`,
+          inputPricePer1M:         sql`excluded.input_price_per1_m`,
+          outputPricePer1M:        sql`excluded.output_price_per1_m`,
+          isFree:                  sql`excluded.is_free`,
+          supportsVision:          sql`excluded.supports_vision`,
+          supportsTools:           sql`excluded.supports_tools`,
+          supportsFunctionCalling: sql`excluded.supports_function_calling`,
+          supportsReasoning:       sql`excluded.supports_reasoning`,
+          supportsThinking:        sql`excluded.supports_thinking`,
+          supportsStreaming:       sql`excluded.supports_streaming`,
+          categories:              sql`excluded.categories`,
+          rankScore:               sql`excluded.rank_score`,
+          rawMetadata:             sql`excluded.raw_metadata`,
+          lastDiscoveredAt:        new Date(),
+          updatedAt:               new Date(),
         },
       })
       .catch(err => console.warn("[ModelDiscovery] Upsert error:", (err as Error).message));

@@ -30,9 +30,11 @@ const Admin            = lazy(() => import("@/pages/Admin"));
 const ChatWorkspace    = lazy(() => import("@/pages/ChatWorkspace"));
 const Workspaces       = lazy(() => import("@/pages/Workspaces"));
 const AIEngine         = lazy(() => import("@/pages/AIEngine"));
-const AIProvidersPage  = lazy(() => import("@/pages/AIProvidersPage"));
-const AIModelsPage     = lazy(() => import("@/pages/AIModelsPage"));
-const Profile          = lazy(() => import("@/pages/Profile"));
+const AIProvidersPage    = lazy(() => import("@/pages/AIProvidersPage"));
+const AIModelsPage       = lazy(() => import("@/pages/AIModelsPage"));
+const AIUsageDashboard   = lazy(() => import("@/pages/AIUsageDashboard"));
+const AIRouterPage       = lazy(() => import("@/pages/AIRouterPage"));
+const Profile            = lazy(() => import("@/pages/Profile"));
 
 // ── Loading fallback ────────────────────────────────────────────────────────
 function PageLoader() {
@@ -102,6 +104,12 @@ const AIProvidersPageWrapper = () => (
 const AIModelsPageWrapper = () => (
   <ProtectedRoute requireAdmin><AppLayout><AIModelsPage /></AppLayout></ProtectedRoute>
 );
+const AIUsageDashboardWrapper = () => (
+  <ProtectedRoute requireAdmin><AppLayout><AIUsageDashboard /></AppLayout></ProtectedRoute>
+);
+const AIRouterPageWrapper = () => (
+  <ProtectedRoute requireAdmin><AppLayout><AIRouterPage /></AppLayout></ProtectedRoute>
+);
 const ProfilePage = () => (
   <ProtectedRoute><AppLayout><Profile /></AppLayout></ProtectedRoute>
 );
@@ -130,6 +138,8 @@ function Router() {
         <Route path="/ai-engine"       component={AIEnginePage} />
         <Route path="/ai-providers"    component={AIProvidersPageWrapper} />
         <Route path="/ai-models"       component={AIModelsPageWrapper} />
+        <Route path="/ai-dashboard"    component={AIUsageDashboardWrapper} />
+        <Route path="/ai-router"       component={AIRouterPageWrapper} />
         <Route path="/profile"         component={ProfilePage} />
         <Route                         component={() => <NotFound />} />
       </Switch>

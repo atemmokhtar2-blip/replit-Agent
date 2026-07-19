@@ -402,6 +402,20 @@ router.post("/validate-selected/stream", requireRole("admin"), async (req, res) 
   }
 });
 
+// ── GET /providers/backup/export-keys — export decrypted key values for encrypted client-side backup ──
+//
+// Returns plaintext API keys so the frontend can encrypt them with a user-supplied password.
+// ONLY accessible to admin/super_admin. Never expose this over HTTP without TLS in production.
+
+router.get("/backup/export-keys", requireRole("admin"), async (_req, res) => {
+  try {
+    const data = providerManager.exportKeysForBackup();
+    res.json({ ok: true, data });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
+});
+
 // ── GET /providers/export — export key metadata (no plaintext) ────────────────
 
 router.get("/export", requireRole("admin"), async (_req, res) => {
@@ -457,6 +471,26 @@ router.post("/models/discover", requireRole("admin"), async (_req, res) => {
   try {
     const results = await providerManager.discoverModels();
     res.json({ ok: true, data: results });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// ── GET /providers/dashboard — aggregated usage stats ─────────────────────────
+router.get("/dashboard", requireRole("admin"), async (_req, res) => {
+  try {
+    const data = await providerManager.getUsageDashboard();
+    res.json({ ok: true, data });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// ── GET /providers/router — AI router recommendations per task type ────────────
+router.get("/router", requireRole("admin"), async (_req, res) => {
+  try {
+    const data = await providerManager.getRouterRecommendations();
+    res.json({ ok: true, data });
   } catch (err) {
     res.status(500).json({ ok: false, error: (err as Error).message });
   }

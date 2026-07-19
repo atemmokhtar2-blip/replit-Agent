@@ -105,20 +105,23 @@ export type ModelCategory =
   | "multimodal";
 
 export interface DiscoveredModel {
-  modelId:           string;
-  displayName:       string;
-  description?:      string;
-  contextLength?:    number;
-  inputPricePer1M?:  number;  // USD per 1M prompt tokens
-  outputPricePer1M?: number;  // USD per 1M completion tokens
-  isFree:            boolean;
-  supportsVision:    boolean;
-  supportsTools:     boolean;
-  supportsReasoning: boolean;
-  supportsStreaming: boolean;
-  categories:        ModelCategory[];
-  rankScore:         number;
-  rawMetadata?:      Record<string, unknown>;
+  modelId:                 string;
+  displayName:             string;
+  description?:            string;
+  contextLength?:          number;
+  maxOutputTokens?:        number;
+  inputPricePer1M?:        number;  // USD per 1M prompt tokens
+  outputPricePer1M?:       number;  // USD per 1M completion tokens
+  isFree:                  boolean;
+  supportsVision:          boolean;
+  supportsTools:            boolean;
+  supportsFunctionCalling?: boolean;
+  supportsReasoning:        boolean;
+  supportsThinking?:        boolean;
+  supportsStreaming:         boolean;
+  categories:              ModelCategory[];
+  rankScore:               number;
+  rawMetadata?:            Record<string, unknown>;
 }
 
 // ── Provider adapter interface ─────────────────────────────────────────────────

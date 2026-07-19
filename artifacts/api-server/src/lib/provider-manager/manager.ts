@@ -325,6 +325,7 @@ export class ProviderManager {
 
   constructor() {
     this.monitor   = new HealthMonitor(this.providers);
+    this.monitor.registerTestFn((keyId) => this.testKey(keyId));
     this.discovery = new ModelDiscoveryService(ALL_ADAPTERS, (slug) => {
       const p = this.providers.get(slug);
       const firstKey = p?.keys.find(k => k.enabled);
@@ -854,6 +855,148 @@ export class ProviderManager {
   /** Get the best model for a given task type. */
   async getBestModel(taskType: string, preferFree = false) {
     return this.discovery.getBestModelForTask(taskType, preferFree);
+  }
+
+  /** Get aggregated usage statistics for the dashboard. */
+  async getUsageDashboard(): Promise<{
+    providers:      Array<{ slug: string; displayName: string; totalRequests: number; successRate: number; avgLatencyMs: number; activeKeys: number; totalKeys: number; errorCount: number; healthScore: number; status: string }>;
+    models:         Array<{ model: string; provider: string; uses: number; successRate: number; avgLatencyMs: number; lastUsed: string | null }>;
+    recentActivity: Array<{ hour: string; requests: number; success: number; failed: number }>;
+    totals:         { requests: number; success: number; errors: number; avgLatency: number; activeProviders: number; totalKeys: number };
+  }> {
+    const logs = await db.select().from(aiRequestLogTable)
+      .orderBy(desc(aiRequestLogTable.createdAt))
+      .limit(5000);
+
+    const providers = [...this.providers.values()].map(p => ({
+      slug:          p.slug,
+      displayName:   p.displayName,
+      totalRequests: p.totalRequests,
+      successRate:   p.totalRequests > 0 ? p.successCount / p.totalRequests : 1,
+      avgLatencyMs:  p.avgLatencyMs,
+      activeKeys:    p.keys.filter(k => k.enabled && k.status === "active").length,
+      totalKeys:     p.keys.length,
+      errorCount:    p.failureCount,
+      healthScore:   p.healthScore,
+      status:        p.status,
+    }));
+
+    const modelMap = new Map<string, { provider: string; success: number; total: number; totalLatency: number; lastUsed: string | null }>();
+    const hourMap  = new Map<string, { requests: number; success: number; failed: number }>();
+
+    for (const log of logs) {
+      if (log.model) {
+        const key = `${log.providerSlug}:${log.model}`;
+        const cur = modelMap.get(key) ?? { provider: log.providerSlug, success: 0, total: 0, totalLatency: 0, lastUsed: null };
+        cur.total++;
+        if (log.status === "success") cur.success++;
+        if (log.latencyMs) cur.totalLatency += log.latencyMs;
+        const ts = (log.createdAt instanceof Date ? log.createdAt : new Date()).toISOString();
+        if (!cur.lastUsed || ts > cur.lastUsed) cur.lastUsed = ts;
+        modelMap.set(key, cur);
+      }
+      if (log.createdAt) {
+        const h = new Date(log.createdAt instanceof Date ? log.createdAt : new Date());
+        h.setMinutes(0, 0, 0);
+        const hKey = h.toISOString();
+        const cur  = hourMap.get(hKey) ?? { requests: 0, success: 0, failed: 0 };
+        cur.requests++;
+        if (log.status === "success") cur.success++; else cur.failed++;
+        hourMap.set(hKey, cur);
+      }
+    }
+
+    const models = [...modelMap.entries()]
+      .map(([key, v]) => ({
+        model:        key.split(":").slice(1).join(":"),
+        provider:     v.provider,
+        uses:         v.total,
+        successRate:  v.total > 0 ? v.success / v.total : 1,
+        avgLatencyMs: v.total > 0 ? Math.round(v.totalLatency / v.total) : 0,
+        lastUsed:     v.lastUsed,
+      }))
+      .sort((a, b) => b.uses - a.uses);
+
+    const recentActivity = [...hourMap.entries()]
+      .map(([hour, v]) => ({ hour, ...v }))
+      .sort((a, b) => a.hour.localeCompare(b.hour))
+      .slice(-24);
+
+    const totalSuccess = logs.filter(l => l.status === "success").length;
+    const totalLatency = logs.reduce((s, l) => s + (l.latencyMs ?? 0), 0);
+
+    return {
+      providers,
+      models,
+      recentActivity,
+      totals: {
+        requests:        logs.length,
+        success:         totalSuccess,
+        errors:          logs.length - totalSuccess,
+        avgLatency:      logs.length > 0 ? Math.round(totalLatency / logs.length) : 0,
+        activeProviders: providers.filter(p => p.activeKeys > 0).length,
+        totalKeys:       providers.reduce((s, p) => s + p.activeKeys, 0),
+      },
+    };
+  }
+
+  /** Get AI router recommendations per task type (what would be selected for each). */
+  async getRouterRecommendations(): Promise<{
+    recommendations: Array<{
+      taskType: string; provider: string; providerDisplay: string; model: string;
+      score: number; reason: string; isFree: boolean;
+      supportsVision: boolean; supportsTools: boolean; supportsReasoning: boolean;
+    }>;
+    generatedAt: string;
+  }> {
+    const TASK_TYPES = ["planning", "code-gen", "debugging", "documentation", "review", "verification", "general"];
+
+    const recommendations = await Promise.all(
+      TASK_TYPES.map(async taskType => {
+        const best = await this.discovery.getBestModelForTask(taskType, false);
+        if (best) {
+          const providerDisplay = this.providers.get(best.providerSlug)?.displayName ?? best.providerSlug;
+          const cats = (best.categories as string[] | null) ?? [];
+          return {
+            taskType,
+            provider:        best.providerSlug,
+            providerDisplay,
+            model:           best.modelId,
+            score:           Math.round(best.rankScore ?? 50),
+            reason:          `Ranked #1 for ${taskType} — ${cats.join(", ") || "general purpose"} · score ${Math.round(best.rankScore ?? 50)}/100`,
+            isFree:          best.isFree,
+            supportsVision:  best.supportsVision,
+            supportsTools:   best.supportsTools,
+            supportsReasoning: best.supportsReasoning,
+          };
+        }
+
+        // Fallback: use adapter default model for the first active provider
+        const ordered = this.orderedProviders().filter(p => p.keys.some(k => k.enabled && k.status === "active"));
+        const first   = ordered[0];
+        if (!first) {
+          return {
+            taskType,
+            provider: "none", providerDisplay: "None", model: "none",
+            score: 0, reason: "No active providers — add API keys to enable routing",
+            isFree: false, supportsVision: false, supportsTools: false, supportsReasoning: false,
+          };
+        }
+        const adapter = ALL_ADAPTERS.find(a => a.slug === first.slug);
+        const model   = adapter?.defaultModels[taskType as keyof typeof adapter.defaultModels] ?? "unknown";
+        return {
+          taskType,
+          provider:        first.slug,
+          providerDisplay: first.displayName,
+          model,
+          score:           50,
+          reason:          "Provider default model (run model discovery for ranked recommendations)",
+          isFree:          false, supportsVision: false, supportsTools: true, supportsReasoning: false,
+        };
+      }),
+    );
+
+    return { recommendations, generatedAt: new Date().toISOString() };
   }
 
   /** Get info about last discovery run. */
@@ -1394,6 +1537,25 @@ export class ProviderManager {
       }
     }
     return this.bulkDeleteKeys(toDelete);
+  }
+
+  // ── Backup export (plaintext key values — admin only, for encrypted backup/restore) ──
+
+  exportKeysForBackup(): {
+    providerSlug: string; displayName: string; name: string; plainKey: string; prefix: string;
+  }[] {
+    const rows: { providerSlug: string; displayName: string; name: string; plainKey: string; prefix: string }[] = [];
+    for (const p of this.providers.values()) {
+      for (const k of p.keys) {
+        try {
+          const plainKey = decryptKey(k.keyEncrypted);
+          rows.push({ providerSlug: p.slug, displayName: p.displayName, name: k.name, plainKey, prefix: k.keyPrefix });
+        } catch {
+          // skip any key that fails to decrypt (shouldn't happen, but be defensive)
+        }
+      }
+    }
+    return rows;
   }
 
   // ── Export key metadata (never plaintext) ──────────────────────────────────

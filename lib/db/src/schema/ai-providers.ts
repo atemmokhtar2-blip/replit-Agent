@@ -106,6 +106,9 @@ export const aiDiscoveredModelsTable = pgTable("ai_discovered_models", {
   supportsTools:      boolean("supports_tools").notNull().default(false),
   supportsReasoning:  boolean("supports_reasoning").notNull().default(false),
   supportsStreaming:  boolean("supports_streaming").notNull().default(true),
+  supportsFunctionCalling: boolean("supports_function_calling").notNull().default(false),
+  supportsThinking:   boolean("supports_thinking").notNull().default(false),
+  maxOutputTokens:    integer("max_output_tokens"),
   categories:         jsonb("categories").$type<string[]>(),  // e.g. ["coding","free","fast"]
   rankScore:          real("rank_score").notNull().default(0),
   priority:           integer("priority").notNull().default(50),

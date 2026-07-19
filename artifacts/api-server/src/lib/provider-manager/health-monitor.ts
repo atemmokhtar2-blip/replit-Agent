@@ -139,21 +139,33 @@ async function persistKey(key: RuntimeKeyState): Promise<void> {
 // ── HealthMonitor class ────────────────────────────────────────────────────────
 
 export class HealthMonitor {
-  private timer: NodeJS.Timeout | null = null;
-  private providers: Map<string, RuntimeProviderState>;
+  private timer:      NodeJS.Timeout | null = null;
+  private activeTimer: NodeJS.Timeout | null = null;
+  private providers:  Map<string, RuntimeProviderState>;
+  private testKeyFn:  ((keyId: string) => Promise<{ ok: boolean; latencyMs: number; error?: string }>) | null = null;
 
   constructor(providers: Map<string, RuntimeProviderState>) {
     this.providers = providers;
   }
 
+  /** Register a test-key callback so the monitor can actively probe error keys. */
+  registerTestFn(fn: (keyId: string) => Promise<{ ok: boolean; latencyMs: number; error?: string }>): void {
+    this.testKeyFn = fn;
+  }
+
   start(): void {
     if (this.timer) return;
     this.timer = setInterval(() => { void this.tick(); }, HEALTH_INTERVAL_MS);
+
+    // Active re-test of error-state keys every 5 minutes
+    this.activeTimer = setInterval(() => { void this.activeRetest(); }, 5 * 60 * 1000);
+
     console.log("[HealthMonitor] Started (interval:", HEALTH_INTERVAL_MS, "ms)");
   }
 
   stop(): void {
-    if (this.timer) { clearInterval(this.timer); this.timer = null; }
+    if (this.timer)       { clearInterval(this.timer);       this.timer       = null; }
+    if (this.activeTimer) { clearInterval(this.activeTimer); this.activeTimer = null; }
   }
 
   async tick(): Promise<void> {
@@ -168,7 +180,42 @@ export class HealthMonitor {
     }
   }
 
-  // Force an immediate health check (called from admin API)
+  /**
+   * Actively re-test keys in error state (not cooling — those have their own timer).
+   * If a key passes, it's re-enabled as active.
+   */
+  async activeRetest(): Promise<void> {
+    if (!this.testKeyFn) return;
+    const fn = this.testKeyFn;
+
+    for (const p of this.providers.values()) {
+      for (const key of p.keys) {
+        // Probe keys that are in a hard-error state (disabled after too many failures)
+        // but skip cooling keys — they have their own cooldown timer in tick()
+        if (key.status !== "error" && !(key.status === "active" && !key.enabled && key.consecutiveFailures >= DISABLE_THRESHOLD)) {
+          continue;
+        }
+
+        try {
+          const result = await fn(key.id);
+          if (result.ok) {
+            key.status              = "active";
+            key.enabled             = true;
+            key.consecutiveFailures = 0;
+            key.lastSuccessAt       = new Date();
+            await persistKey(key);
+            console.log(`[HealthMonitor] Active retest: key ${key.id} (${key.name}) recovered — re-enabled`);
+          } else {
+            console.debug(`[HealthMonitor] Active retest: key ${key.id} still failing: ${result.error}`);
+          }
+        } catch {
+          // silently skip — we'll retry next cycle
+        }
+      }
+    }
+  }
+
+  /** Force an immediate health check (called from admin API). */
   async runNow(): Promise<void> {
     await this.tick();
   }

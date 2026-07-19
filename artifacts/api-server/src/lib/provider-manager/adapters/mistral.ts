@@ -1,4 +1,4 @@
-import type { ProviderAdapter, LLMMessage, LLMOptions, ProviderError } from "../types.js";
+import type { ProviderAdapter, LLMMessage, LLMOptions, ProviderError, DiscoveredModel, ModelCategory } from "../types.js";
 
 const TIMEOUT_MS = 55_000;
 const BASE_URL   = "https://api.mistral.ai/v1";
@@ -77,6 +77,49 @@ export const mistralAdapter: ProviderAdapter = {
       return { ok: resp.ok, latencyMs: Date.now() - t0, error: resp.ok ? undefined : `HTTP ${resp.status}` };
     } catch (err) {
       return { ok: false, latencyMs: Date.now() - t0, error: (err as Error).message };
+    }
+  },
+
+  async listModels(apiKey: string): Promise<DiscoveredModel[]> {
+    try {
+      const resp = await fetch(`${BASE_URL}/models`, {
+        headers: { Authorization: `Bearer ${apiKey}` },
+        signal: AbortSignal.timeout(12_000),
+      });
+      if (!resp.ok) return [];
+      const data = await resp.json() as { data?: Array<{
+        id: string; object?: string; capabilities?: { completion_chat?: boolean; function_calling?: boolean };
+        max_context_length?: number;
+      }> };
+      const models = (data.data ?? []).filter(m => m.object === "model" || m.capabilities?.completion_chat !== false);
+      return models.map(m => {
+        const id = m.id;
+        const idL = id.toLowerCase();
+        const isCodestral = idL.includes("codestral");
+        const isLarge     = idL.includes("large");
+        const isMini      = idL.includes("mini") || idL.includes("small");
+        const hasFC       = m.capabilities?.function_calling ?? (isLarge || isCodestral);
+        const cats: ModelCategory[] = ["general", "paid"];
+        if (isCodestral) cats.push("coding");
+        if (isMini)      cats.push("fast");
+        if (hasFC)       cats.push("reasoning");
+        return {
+          modelId:                 id,
+          displayName:             id,
+          contextLength:           m.max_context_length,
+          isFree:                  false,
+          supportsVision:          false,
+          supportsTools:           hasFC,
+          supportsFunctionCalling: hasFC,
+          supportsReasoning:       isLarge,
+          supportsThinking:        false,
+          supportsStreaming:        true,
+          categories:              cats,
+          rankScore:               isCodestral ? 72 : isLarge ? 70 : isMini ? 55 : 60,
+        };
+      });
+    } catch {
+      return [];
     }
   },
 

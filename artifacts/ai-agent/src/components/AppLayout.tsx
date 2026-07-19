@@ -22,6 +22,8 @@ import {
   BrainCircuit,
   Network,
   Sparkles,
+  BarChart3,
+  Route,
 } from "lucide-react";
 
 const LG_BREAKPOINT = 1024;
@@ -82,6 +84,8 @@ export function AppLayout({ children }: { children: React.ReactNode }) {
   if (user?.role === "admin" || user?.role === "super_admin") {
     navItems.push({ href: "/ai-providers", label: "AI Providers", icon: Network });
     navItems.push({ href: "/ai-models",    label: "AI Models",    icon: Sparkles });
+    navItems.push({ href: "/ai-dashboard", label: "AI Dashboard", icon: BarChart3 });
+    navItems.push({ href: "/ai-router",    label: "AI Router",    icon: Route });
     navItems.push({ href: "/admin",        label: "Admin",        icon: ShieldAlert });
   }
 

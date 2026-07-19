@@ -111,11 +111,76 @@ function classifyKeyClient(raw: string): string | null {
   return null;
 }
 
+/**
+ * Clipboard Import Pro — Phase 2
+ *
+ * Intelligently extracts API keys from any raw text:
+ *   • Strips comment lines (#, //, --, *)
+ *   • Strips URLs (http://, https://)
+ *   • Handles KEY=VALUE env-file format (takes the value)
+ *   • Handles JSON arrays and objects (extracts string values)
+ *   • Handles CSV (takes the longest token per line)
+ *   • Strips surrounding quotes, labels, whitespace
+ *   • Deduplicates by first 20 chars
+ */
 function parseRawKeys(text: string): string[] {
-  return text
-    .split(/[\n,;]+/)
-    .map(s => s.trim().replace(/^["']|["']$/g, "").trim())
-    .filter(s => s.length >= 8);
+  // Try JSON parsing first
+  const trimmed = text.trim();
+  if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(trimmed) as unknown;
+      const vals: string[] = [];
+      function extract(v: unknown) {
+        if (typeof v === "string") { vals.push(v); return; }
+        if (Array.isArray(v)) { v.forEach(extract); return; }
+        if (v && typeof v === "object") {
+          for (const [, val] of Object.entries(v as Record<string, unknown>)) extract(val);
+        }
+      }
+      extract(parsed);
+      return vals.filter(s => s.length >= 8 && !s.startsWith("http"));
+    } catch { /* fall through to line parsing */ }
+  }
+
+  const lines = text.split(/[\n\r]+/);
+  const keys: string[] = [];
+
+  for (const line of lines) {
+    const l = line.trim();
+    if (!l) continue;
+
+    // Skip comment lines
+    if (/^[#/\-*]/.test(l)) continue;
+
+    // Skip pure URLs
+    if (/^https?:\/\//i.test(l)) continue;
+
+    // Handle ENV format: KEY=value or export KEY=value or KEY="value"
+    const envMatch = l.match(/^(?:export\s+)?[A-Z_][A-Z0-9_]*\s*=\s*["']?(.+?)["']?\s*$/);
+    if (envMatch?.[1]) {
+      const val = envMatch[1].trim();
+      if (val.length >= 8 && !val.startsWith("http")) keys.push(val);
+      continue;
+    }
+
+    // Split by common separators (comma, semicolon, pipe, tab)
+    const tokens = l.split(/[,;|\t]+/).map(t => t.trim());
+
+    for (const token of tokens) {
+      // Strip surrounding quotes
+      const cleaned = token.replace(/^["'`]|["'`]$/g, "").trim();
+
+      // Skip empty, URLs, and very short strings
+      if (cleaned.length < 8 || /^https?:\/\//i.test(cleaned)) continue;
+
+      // Skip lines that look like labels/descriptions (contain spaces and are not key-like)
+      if (cleaned.includes(" ") && !cleaned.match(/^sk-|^sk-or|^AIza|^gsk_|^xai-|^hf_|^co-|^ms-/)) continue;
+
+      keys.push(cleaned);
+    }
+  }
+
+  return keys;
 }
 
 function deduplicateParsed(keys: string[]): string[] {
@@ -614,8 +679,35 @@ function ImportPanel({ onImported, initialRaw = "" }: { onImported: () => void; 
   const [isImporting, setIsImporting]     = useState(false);
   const [importResult, setImportResult]   = useState<ImportResult | null>(null);
   const [overrideSlug, setOverrideSlug]   = useState<string>("");
+  const [isDragging, setIsDragging]       = useState(false);
 
   const qc = useQueryClient();
+
+  // ── Drag & drop file handling ─────────────────────────────────────────────
+
+  const handleFileDrop = (e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (!file) return;
+    readFileContents(file);
+  };
+
+  const readFileContents = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      setRaw(prev => prev ? `${prev}\n${text}` : text);
+      toast.info(`Loaded ${file.name}`, { description: "Keys extracted automatically" });
+    };
+    reader.readAsText(file);
+  };
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) readFileContents(file);
+    e.target.value = "";
+  };
 
   // Live classification as user types (client-side, fast)
   const liveClassified = (() => {
@@ -685,24 +777,48 @@ function ImportPanel({ onImported, initialRaw = "" }: { onImported: () => void; 
 
   return (
     <div className="space-y-6">
-      {/* Textarea */}
+      {/* Textarea + Drag & Drop zone */}
       <Card className="border-border bg-card/60">
         <CardHeader className="pb-3">
-          <div className="flex items-center gap-2">
-            <Upload className="h-4 w-4 text-violet-400" />
-            <CardTitle className="text-sm font-semibold text-white">Paste API Keys</CardTitle>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Upload className="h-4 w-4 text-violet-400" />
+              <CardTitle className="text-sm font-semibold text-white">Paste or Drop API Keys</CardTitle>
+            </div>
+            <label className="cursor-pointer">
+              <input type="file" accept=".txt,.env,.csv,.json" className="sr-only" onChange={handleFileInputChange} />
+              <span className="inline-flex items-center gap-1.5 rounded-md border border-border/60 bg-muted/20 px-2.5 py-1 text-xs text-muted-foreground hover:text-foreground hover:border-border transition-colors">
+                <Upload className="h-3 w-3" /> Load file
+              </span>
+            </label>
           </div>
           <p className="text-xs text-muted-foreground mt-1">
-            Paste any number of API keys — one per line. The system auto-detects the provider from the key format.
+            Paste keys, drag &amp; drop a .txt/.env/.csv/.json file, or click "Load file". Provider auto-detected from key format.
+            Comments, URLs, and labels are stripped automatically.
           </p>
         </CardHeader>
         <CardContent className="space-y-4">
-          <Textarea
-            placeholder={`sk-or-v1-xxxxxxxxxxxxx\nsk-ant-api-03-xxxxxxxxx\nAIzaSyxxxxxxxxxxxxxxx\ngsk_xxxxxxxxxxxxxxxxx\nxai-xxxxxxxxxxxxxxxxx\nhf_xxxxxxxxxxxxxxxxxx\n\n# One key per line — blank lines and duplicates are ignored automatically`}
-            value={raw}
-            onChange={e => setRaw(e.target.value)}
-            className="font-mono text-xs min-h-[220px] resize-y bg-muted/10 border-border/60"
-          />
+          <div
+            onDragOver={e => { e.preventDefault(); setIsDragging(true); }}
+            onDragLeave={() => setIsDragging(false)}
+            onDrop={handleFileDrop}
+            className={`relative rounded-lg transition-colors ${isDragging ? "ring-2 ring-violet-500/60 bg-violet-500/5" : ""}`}
+          >
+            {isDragging && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-violet-500/10 border-2 border-dashed border-violet-500/50 pointer-events-none">
+                <div className="text-center text-violet-300">
+                  <Upload className="h-8 w-8 mx-auto mb-2 opacity-80" />
+                  <p className="text-sm font-medium">Drop file to load keys</p>
+                </div>
+              </div>
+            )}
+            <Textarea
+              placeholder={`sk-or-v1-xxxxxxxxxxxxx\nsk-ant-api-03-xxxxxxxxx\nAIzaSyxxxxxxxxxxxxxxx\ngsk_xxxxxxxxxxxxxxxxx\nxai-xxxxxxxxxxxxxxxxx\nhf_xxxxxxxxxxxxxxxxxx\n\n# Comments, KEY=value ENV format, CSV, and JSON are all supported`}
+              value={raw}
+              onChange={e => setRaw(e.target.value)}
+              className="font-mono text-xs min-h-[220px] resize-y bg-muted/10 border-border/60"
+            />
+          </div>
 
           {/* Live stats */}
           {liveClassified && liveClassified.length > 0 && (
@@ -1334,26 +1450,154 @@ export default function AIProvidersPage() {
     }
   };
 
+  // ── AES-256-GCM encrypted backup/restore ─────────────────────────────────
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const deriveKey = async (password: string, salt: Uint8Array): Promise<CryptoKey> => {
+    const enc = new TextEncoder();
+    const keyMaterial = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveKey"]);
+    return crypto.subtle.deriveKey(
+      { name: "PBKDF2", salt: salt as unknown as Uint8Array<ArrayBuffer>, iterations: 200_000, hash: "SHA-256" },
+      keyMaterial,
+      { name: "AES-GCM", length: 256 },
+      false,
+      ["encrypt", "decrypt"],
+    );
+  };
+
   const handleBackup = async () => {
+    const password = window.prompt("Enter a backup password (required to restore — store it safely):");
+    if (!password) return;
+    if (password.length < 4) { toast.error("Password must be at least 4 characters"); return; }
     try {
-      const result = await apiFetch<{ data: object[] }>(`${BASE}/export`);
-      const payload = {
-        version: 1,
+      // Fetch actual decrypted key values from the server (admin-only endpoint)
+      const result = await apiFetch<{ data: Array<{ providerSlug: string; displayName: string; name: string; plainKey: string; prefix: string }> }>(
+        `${BASE}/backup/export-keys`,
+      );
+      if (!result.data.length) { toast.error("No keys to back up"); return; }
+
+      // Payload contains the real key values so restore can actually recreate them
+      const payload = JSON.stringify({
+        version:    3,                          // v3 = contains plaintext keys for restore
         exportedAt: new Date().toISOString(),
-        keys: result.data,
-      };
-      const json = JSON.stringify(payload, null, 2);
-      const blob = new Blob([json], { type: "application/json" });
+        keyCount:   result.data.length,
+        keys:       result.data,                // [{providerSlug, displayName, name, plainKey, prefix}]
+      });
+
+      const salt   = crypto.getRandomValues(new Uint8Array(16));
+      const iv     = crypto.getRandomValues(new Uint8Array(12));
+      const aesKey = await deriveKey(password, salt);
+      const cipher = await crypto.subtle.encrypt(
+        { name: "AES-GCM", iv: iv as unknown as Uint8Array<ArrayBuffer> },
+        aesKey,
+        new TextEncoder().encode(payload),
+      );
+
+      // File layout: MAGIC(4B) + salt(16B) + iv(12B) + ciphertext
+      const MAGIC = new Uint8Array([0xAB, 0xCD, 0xEF, 0x03]);   // 0x03 = v3 format
+      const out   = new Uint8Array(4 + 16 + 12 + cipher.byteLength);
+      out.set(MAGIC, 0);
+      out.set(salt, 4);
+      out.set(iv, 20);
+      out.set(new Uint8Array(cipher), 32);
+
+      const blob = new Blob([out], { type: "application/octet-stream" });
       const url  = URL.createObjectURL(blob);
       const a    = document.createElement("a");
       a.href     = url;
-      a.download = `ai-providers-backup-${new Date().toISOString().slice(0, 16).replace("T", "_")}.json`;
+      a.download = `ai-backup-${new Date().toISOString().slice(0, 16).replace("T", "_")}.enc`;
       a.click();
       URL.revokeObjectURL(url);
-      toast.success("Backup downloaded", { description: "Upload this file with Restore to import the key list later." });
+      toast.success(`Encrypted backup downloaded (${result.data.length} keys)`, {
+        description: "Store the password safely — it cannot be recovered from the file.",
+      });
     } catch (err) {
-      toast.error((err as Error).message);
+      toast.error(`Backup failed: ${(err as Error).message}`);
     }
+  };
+
+  const decryptEncFile = async (file: File, password: string): Promise<string> => {
+    const buf  = await file.arrayBuffer();
+    const data = new Uint8Array(buf);
+
+    // Support both v2 magic (0x02) and v3 magic (0x03)
+    const MAGIC_PREFIX = [0xAB, 0xCD, 0xEF];
+    if (!MAGIC_PREFIX.every((b, i) => data[i] === b)) throw new Error("Not a valid encrypted backup file");
+
+    const salt       = data.slice(4, 20);
+    const iv         = data.slice(20, 32);
+    const ciphertext = data.slice(32);
+    const aesKey     = await deriveKey(password, salt);
+    const plain      = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: iv as unknown as Uint8Array<ArrayBuffer> },
+      aesKey,
+      ciphertext,
+    );
+    return new TextDecoder().decode(plain);
+  };
+
+  const handleEncryptedRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+
+    if (file.name.endsWith(".enc")) {
+      const password = window.prompt("Enter the backup password:");
+      if (!password) return;
+
+      let text: string;
+      try {
+        text = await decryptEncFile(file, password);
+      } catch {
+        toast.error("Decryption failed — wrong password or corrupted file");
+        return;
+      }
+
+      // Parse the decrypted payload
+      type BackupPayload = {
+        version: number;
+        keys: Array<{ providerSlug: string; displayName: string; name: string; plainKey: string }>;
+      };
+      let payload: BackupPayload | null = null;
+      try { payload = JSON.parse(text) as BackupPayload; } catch { /* non-JSON enc file */ }
+
+      if (payload?.version === 3 && Array.isArray(payload.keys)) {
+        // v3 backup — contains actual key values → import directly via API
+        const rawKeys = payload.keys.map(k => k.plainKey).filter(Boolean);
+        if (!rawKeys.length) { toast.error("Backup contains no recoverable keys"); return; }
+
+        try {
+          const result = await apiFetch<{ data: ImportResult }>(`${BASE}/import`, {
+            method: "POST",
+            body: JSON.stringify({ keys: rawKeys }),
+          });
+          void qc.invalidateQueries({ queryKey: ["ai-providers-health"] });
+          toast.success(
+            `Restored ${result.data.imported.length} of ${rawKeys.length} keys`,
+            { description: result.data.skipped.length > 0 ? `${result.data.skipped.length} already existed` : undefined },
+          );
+        } catch (err) {
+          toast.error(`Restore import failed: ${(err as Error).message}`);
+        }
+        return;
+      }
+
+      // Legacy v2 / unknown format — load into textarea for manual review
+      setImportInitialRaw(text);
+      setTab("import");
+      toast.info("Legacy backup decrypted", { description: "Review the keys below, then press Import." });
+      return;
+    }
+
+    // Plain text / JSON / CSV file — load into Import textarea
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      setImportInitialRaw(text);
+      setTab("import");
+      toast.info("File loaded", { description: "Review the keys below, then press Import." });
+    };
+    reader.readAsText(file);
   };
 
   const handleRestoreFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1414,10 +1658,10 @@ export default function AIProvidersPage() {
             <label>
               <input
                 type="file"
-                accept=".txt,.json,.csv,.env,text/plain"
+                accept=".txt,.json,.csv,.env,.enc,text/plain,application/octet-stream"
                 className="sr-only"
                 ref={restoreInputRef}
-                onChange={handleRestoreFile}
+                onChange={handleEncryptedRestore}
               />
               <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs cursor-pointer" asChild>
                 <span><Upload className="h-3.5 w-3.5" /> Restore</span>
