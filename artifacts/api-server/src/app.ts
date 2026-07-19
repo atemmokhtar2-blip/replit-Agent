@@ -10,6 +10,11 @@ import { logger } from "./lib/logger";
 
 const app: Express = express();
 
+// ── Trust Replit's reverse proxy so rate-limiters see the real client IP ──────
+// Without this, express-rate-limit throws ERR_ERL_UNEXPECTED_X_FORWARDED_FOR
+// and crashes every auth request when the X-Forwarded-For header is present.
+app.set("trust proxy", 1);
+
 // ── Security headers (helmet) ─────────────────────────────────────────────────
 app.use(
   helmet({
