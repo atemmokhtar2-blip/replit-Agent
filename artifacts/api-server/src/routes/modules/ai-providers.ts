@@ -240,6 +240,121 @@ router.post("/:slug/keys/:id/test", async (req, res) => {
   }
 });
 
+// ── POST /providers/classify — classify raw keys without importing ─────────────
+
+const classifySchema = z.object({
+  keys: z.array(z.string()).min(1).max(2000),
+});
+
+router.post("/classify", requireRole("admin"), validateBody(classifySchema), async (req, res) => {
+  try {
+    const { keys } = req.body as { keys: string[] };
+    const results  = providerManager.classifyKeys(keys);
+    res.json({ ok: true, data: results });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// ── POST /providers/import — bulk import multiple keys ─────────────────────────
+
+const importSchema = z.object({
+  keys:        z.array(z.string()).min(1).max(2000),
+  defaultSlug: z.string().optional(),
+});
+
+router.post("/import", requireRole("admin"), validateBody(importSchema), async (req, res) => {
+  try {
+    const { keys, defaultSlug } = req.body as { keys: string[]; defaultSlug?: string };
+    const result = await providerManager.importKeys(keys, defaultSlug);
+    res.json({ ok: true, data: result });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// ── POST /providers/validate-all/stream — SSE: validate every enabled key ─────
+
+router.post("/validate-all/stream", requireRole("admin"), async (req, res) => {
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control",               "no-cache");
+  res.setHeader("Connection",                  "keep-alive");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.flushHeaders();
+
+  const send = (event: string, data: unknown) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  const abortCtrl = new AbortController();
+  res.on("close", () => abortCtrl.abort());
+
+  try {
+    const summary = await providerManager.validateAllKeys(
+      (result) => send("progress", result),
+      abortCtrl.signal,
+    );
+    send("done", summary);
+  } catch (err) {
+    send("error", { message: (err as Error).message });
+  } finally {
+    res.end();
+  }
+});
+
+// ── POST /providers/bulk — bulk enable / disable / delete ──────────────────────
+
+const bulkSchema = z.object({
+  action: z.enum(["enable", "disable", "delete"]),
+  keyIds: z.array(z.string().uuid()).min(1).max(500),
+});
+
+router.post("/bulk", requireRole("admin"), validateBody(bulkSchema), async (req, res) => {
+  try {
+    const { action, keyIds } = req.body as { action: "enable" | "disable" | "delete"; keyIds: string[] };
+    let count = 0;
+    if (action === "enable")  count = await providerManager.bulkEnableKeys(keyIds);
+    if (action === "disable") count = await providerManager.bulkDisableKeys(keyIds);
+    if (action === "delete")  count = await providerManager.bulkDeleteKeys(keyIds);
+    res.json({ ok: true, data: { count } });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// ── DELETE /providers/invalid — remove all error/exhausted keys ───────────────
+
+router.delete("/invalid", requireRole("admin"), async (_req, res) => {
+  try {
+    const count = await providerManager.deleteInvalidKeys();
+    res.json({ ok: true, data: { count } });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// ── DELETE /providers/duplicates — remove duplicate keys by prefix ─────────────
+
+router.delete("/duplicates", requireRole("admin"), async (_req, res) => {
+  try {
+    const count = await providerManager.deleteDuplicateKeys();
+    res.json({ ok: true, data: { count } });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// ── GET /providers/export — export key metadata (no plaintext) ────────────────
+
+router.get("/export", requireRole("admin"), async (_req, res) => {
+  try {
+    const data = providerManager.exportKeysMeta();
+    res.json({ ok: true, data });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: (err as Error).message });
+  }
+});
+
 // ── Model Discovery endpoints ─────────────────────────────────────────────────
 
 // GET /providers/models — list discovered models with filtering

@@ -793,6 +793,7 @@ export class ProviderManager {
           healthScore:     p.healthScore,
           enabled:         p.enabled,
           priority:        p.priority,
+          routingStrategy: p.routingStrategy,
           totalRequests:   pTotal,
           successCount:    p.successCount,
           failureCount:    p.failureCount,
@@ -1057,6 +1058,293 @@ export class ProviderManager {
       }
     }
     this.seedEnvKeys();
+  }
+
+  // ── Key classification (auto-detect provider from raw key format) ─────────
+
+  static classifyKey(plainKey: string): string | null {
+    const k = plainKey.trim();
+    if (!k || k.length < 8) return null;
+    if (k.startsWith("sk-or-v1-"))           return "openrouter";
+    if (k.startsWith("sk-ant-"))              return "anthropic";
+    if (k.startsWith("AIzaSy"))               return "gemini";
+    if (k.startsWith("gsk_"))                 return "groq";
+    if (k.startsWith("xai-"))                 return "xai";
+    if (k.startsWith("hf_"))                  return "huggingface";
+    if (k.startsWith("sk-proj-"))             return "openai";
+    if (k.startsWith("sk-") && k.length > 48) return "openai";   // classic sk- format
+    if (k.startsWith("sk-") && k.length >= 32) return "deepseek"; // deepseek shorter
+    if (k.startsWith("ms-") || /^[a-zA-Z0-9]{32}$/.test(k)) return "mistral";
+    if (k.startsWith("co-") || /^[a-zA-Z0-9]{40}$/.test(k)) return "cohere";
+    return null; // unknown — user must pick
+  }
+
+  // ── Bulk import ─────────────────────────────────────────────────────────────
+  //
+  // Accepts a list of raw keys. For each key:
+  //   1. Classify provider (auto or user-supplied slug)
+  //   2. Deduplicate by keyPrefix (skip if already in pool)
+  //   3. Insert into DB + add to in-memory pool
+
+  async importKeys(rawKeys: string[], defaultSlug?: string): Promise<{
+    imported: { id: string; providerSlug: string; name: string; prefix: string }[];
+    skipped:  { key: string; reason: string }[];
+    total:    number;
+  }> {
+    const imported: { id: string; providerSlug: string; name: string; prefix: string }[] = [];
+    const skipped:  { key: string; reason: string }[] = [];
+
+    // Build global prefix→slug map for fast dedup across all providers
+    const existingPrefixes = new Map<string, string>();
+    for (const [slug, p] of this.providers.entries()) {
+      for (const k of p.keys) existingPrefixes.set(k.keyPrefix, slug);
+    }
+
+    let importIndex = 0;
+
+    for (const rawKey of rawKeys) {
+      const plain = rawKey.trim();
+      if (!plain) continue;
+
+      const slug = defaultSlug ?? ProviderManager.classifyKey(plain);
+      if (!slug) {
+        skipped.push({ key: plain.slice(0, 20) + "…", reason: "unrecognized format" });
+        continue;
+      }
+
+      const p = this.providers.get(slug);
+      if (!p) {
+        skipped.push({ key: plain.slice(0, 20) + "…", reason: `unknown provider: ${slug}` });
+        continue;
+      }
+
+      const prefix = keyPrefix(plain);
+      if (existingPrefixes.has(prefix)) {
+        skipped.push({ key: plain.slice(0, 20) + "…", reason: "duplicate" });
+        continue;
+      }
+      existingPrefixes.set(prefix, slug);
+
+      const id           = genId();
+      const keyEncrypted = encryptKey(plain);
+      importIndex++;
+      const name = `imported-${importIndex}`;
+
+      const row: InsertAiProviderKey = {
+        id, providerSlug: slug, name,
+        keyEncrypted, keyPrefix: prefix,
+        enabled: true, status: "active",
+        totalRequests: 0, successCount: 0, failureCount: 0,
+        consecutiveFailures: 0, avgResponseTimeMs: 0,
+      };
+
+      await db.insert(aiProviderKeysTable).values(row).onConflictDoNothing().catch(() => {});
+
+      const runtime: RuntimeKeyState = {
+        id, providerSlug: slug, name,
+        keyEncrypted, keyPrefix: prefix,
+        enabled: true, status: "active",
+        totalRequests: 0, successCount: 0, failureCount: 0,
+        consecutiveFailures: 0, avgResponseTimeMs: 0,
+      };
+      p.keys.push(runtime);
+
+      // Auto-enable provider when it gets its first key
+      if (!p.enabled && p.keys.filter(k => k.enabled).length === 1) {
+        await this.enableProvider(slug).catch(() => {});
+      }
+
+      imported.push({ id, providerSlug: slug, name, prefix });
+    }
+
+    if (imported.length > 0) {
+      console.log(`[ProviderManager] Bulk import: ${imported.length} added, ${skipped.length} skipped`);
+    }
+
+    return { imported, skipped, total: rawKeys.filter(k => k.trim()).length };
+  }
+
+  // ── Classify raw keys (no import — just returns classification) ─────────────
+
+  classifyKeys(rawKeys: string[]): {
+    key: string; prefix: string; providerSlug: string | null; isDuplicate: boolean;
+  }[] {
+    const existingPrefixes = new Map<string, string>();
+    for (const [slug, p] of this.providers.entries()) {
+      for (const k of p.keys) existingPrefixes.set(k.keyPrefix, slug);
+    }
+
+    const seen = new Map<string, boolean>();
+
+    return rawKeys
+      .map(raw => raw.trim())
+      .filter(k => k.length >= 8)
+      .map(plain => {
+        const pref = keyPrefix(plain);
+        const isDuplicate = existingPrefixes.has(pref) || seen.has(pref);
+        seen.set(pref, true);
+        return {
+          key: plain,
+          prefix: pref,
+          providerSlug: ProviderManager.classifyKey(plain),
+          isDuplicate,
+        };
+      });
+  }
+
+  // ── Validate all keys in parallel ──────────────────────────────────────────
+  //
+  // onProgress is called for each key result as it completes.
+  // concurrency limits simultaneous in-flight requests.
+
+  async validateAllKeys(
+    onProgress: (result: {
+      keyId: string; providerSlug: string; keyName: string; prefix: string;
+      ok: boolean; latencyMs: number; error?: string;
+    }) => void,
+    signal?: AbortSignal,
+    concurrency = 8,
+  ): Promise<{ total: number; passed: number; failed: number }> {
+    // Collect all enabled keys across all providers
+    const tasks: { key: RuntimeKeyState; providerSlug: string }[] = [];
+    for (const [slug, p] of this.providers.entries()) {
+      for (const k of p.keys) {
+        if (k.enabled) tasks.push({ key: k, providerSlug: slug });
+      }
+    }
+
+    let passed = 0;
+    let failed = 0;
+
+    // Run with concurrency limit
+    const queue = [...tasks];
+    let active  = 0;
+
+    await new Promise<void>((resolve) => {
+      const drain = () => {
+        while (active < concurrency && queue.length > 0) {
+          const task = queue.shift()!;
+          active++;
+          void this.testKey(task.key.id).then(result => {
+            onProgress({
+              keyId:       task.key.id,
+              providerSlug: task.providerSlug,
+              keyName:     task.key.name,
+              prefix:      task.key.keyPrefix,
+              ok:          result.ok,
+              latencyMs:   result.latencyMs,
+              error:       result.error,
+            });
+            if (result.ok) passed++; else failed++;
+          }).catch(() => {
+            onProgress({
+              keyId:       task.key.id,
+              providerSlug: task.providerSlug,
+              keyName:     task.key.name,
+              prefix:      task.key.keyPrefix,
+              ok:          false,
+              latencyMs:   0,
+              error:       "validation error",
+            });
+            failed++;
+          }).finally(() => {
+            active--;
+            if (signal?.aborted) { resolve(); return; }
+            if (queue.length === 0 && active === 0) { resolve(); return; }
+            drain();
+          });
+        }
+      };
+      if (tasks.length === 0) { resolve(); return; }
+      drain();
+    });
+
+    return { total: tasks.length, passed, failed };
+  }
+
+  // ── Bulk key operations ─────────────────────────────────────────────────────
+
+  async bulkEnableKeys(keyIds: string[]): Promise<number> {
+    let count = 0;
+    for (const id of keyIds) {
+      try { await this.enableKey(id); count++; } catch { /* skip */ }
+    }
+    return count;
+  }
+
+  async bulkDisableKeys(keyIds: string[]): Promise<number> {
+    let count = 0;
+    for (const id of keyIds) {
+      try { await this.disableKey(id); count++; } catch { /* skip */ }
+    }
+    return count;
+  }
+
+  async bulkDeleteKeys(keyIds: string[]): Promise<number> {
+    let count = 0;
+    for (const id of keyIds) {
+      try { await this.deleteKey(id); count++; } catch { /* skip */ }
+    }
+    return count;
+  }
+
+  // ── Cleanup operations ─────────────────────────────────────────────────────
+
+  async deleteInvalidKeys(): Promise<number> {
+    const toDelete: string[] = [];
+    for (const p of this.providers.values()) {
+      for (const k of p.keys) {
+        if (k.status === "error" || k.status === "exhausted") toDelete.push(k.id);
+        else if (!k.enabled && k.consecutiveFailures > 3) toDelete.push(k.id);
+      }
+    }
+    return this.bulkDeleteKeys(toDelete);
+  }
+
+  async deleteDuplicateKeys(): Promise<number> {
+    const seen = new Map<string, string>(); // prefix → first keyId
+    const toDelete: string[] = [];
+    for (const p of this.providers.values()) {
+      for (const k of p.keys) {
+        const prefixKey = `${p.slug}:${k.keyPrefix}`;
+        if (seen.has(prefixKey)) {
+          toDelete.push(k.id);
+        } else {
+          seen.set(prefixKey, k.id);
+        }
+      }
+    }
+    return this.bulkDeleteKeys(toDelete);
+  }
+
+  // ── Export key metadata (never plaintext) ──────────────────────────────────
+
+  exportKeysMeta(): {
+    providerSlug: string; displayName: string; keyId: string; name: string;
+    prefix: string; status: string; enabled: boolean;
+    totalRequests: number; successRate: number; avgResponseTimeMs: number;
+    lastUsed?: string; createdHint: string;
+  }[] {
+    const rows: ReturnType<typeof this.exportKeysMeta> = [];
+    for (const p of this.providers.values()) {
+      for (const k of p.keys) {
+        rows.push({
+          providerSlug:     p.slug,
+          displayName:      p.displayName,
+          keyId:            k.id,
+          name:             k.name,
+          prefix:           k.keyPrefix,
+          status:           k.status,
+          enabled:          k.enabled,
+          totalRequests:    k.totalRequests,
+          successRate:      k.totalRequests > 0 ? k.successCount / k.totalRequests : 1,
+          avgResponseTimeMs: k.avgResponseTimeMs,
+          lastUsed:         k.lastUsedAt?.toISOString(),
+          createdHint:      k.keyPrefix.slice(0, 8),
+        });
+      }
+    }
+    return rows;
   }
 
   // ── Async stat helpers ──────────────────────────────────────────────────────
