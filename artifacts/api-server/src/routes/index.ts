@@ -23,6 +23,7 @@ import repositoriesRouter from "./modules/repositories";
 import secretsCenterRouter from "./modules/secrets-center";
 import workspacesRouter from "./modules/workspaces";
 import aiProvidersRouter from "./modules/ai-providers";
+import systemStatusRouter from "./modules/system-status";
 
 const router: IRouter = Router();
 
@@ -36,6 +37,7 @@ router.use("/v1/projects", projectsRouter);
 router.use("/v1/notifications", notificationsRouter);
 router.use("/v1/admin", adminRouter);
 router.use("/v1/admin/auth", adminAuthRouter);
+router.use("/v1/admin", systemStatusRouter);
 router.use("/v1/audit", auditRouter);
 
 // API v1 — AI Modules

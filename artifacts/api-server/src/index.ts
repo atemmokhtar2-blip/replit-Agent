@@ -1,5 +1,7 @@
 import app from "./app";
 import { logger } from "./lib/logger";
+import { validateEnv } from "./lib/env-config";
+import { runMigrations, closeDb } from "./lib/db-migrate";
 
 const rawPort = process.env["PORT"];
 const port = Number(rawPort ?? "8080");
@@ -61,16 +63,53 @@ async function validatePlannerModels(): Promise<void> {
   }
 }
 
-app.listen(port, (err) => {
-  if (err) {
-    logger.error({ err }, "Error listening on port");
-    process.exit(1);
+// ── Graceful shutdown ──────────────────────────────────────────────────────────
+
+async function shutdown(signal: string): Promise<void> {
+  logger.info({ signal }, "Received shutdown signal — closing gracefully");
+  try {
+    await closeDb();
+    logger.info("Database connections closed");
+  } catch (err) {
+    logger.warn({ err }, "Error closing DB connections");
   }
+  process.exit(0);
+}
 
-  logger.info({ port }, "Server listening");
+process.on("SIGTERM", () => void shutdown("SIGTERM"));
+process.on("SIGINT",  () => void shutdown("SIGINT"));
 
-  // Fire-and-forget startup model validation
-  validatePlannerModels().catch((e) => {
-    logger.warn({ err: e instanceof Error ? e.message : String(e) }, "[STARTUP] Model validation error");
+// ── Main startup sequence ──────────────────────────────────────────────────────
+
+async function startServer(): Promise<void> {
+  // 1. Validate environment variables — prints full report, throws in production if required vars missing
+  validateEnv();
+
+  // 2. Run database migrations — creates tables, applies schema changes, zero data loss
+  await runMigrations();
+
+  // 3. Start HTTP server
+  await new Promise<void>((resolve, reject) => {
+    app.listen(port, (err) => {
+      if (err) {
+        reject(err);
+        return;
+      }
+      resolve();
+    });
   });
+
+  logger.info({ port, env: process.env["NODE_ENV"] ?? "development" }, "✓ Server listening");
+
+  // 4. Post-startup checks (fire-and-forget — don't block serving traffic)
+  setTimeout(() => {
+    validatePlannerModels().catch((e) => {
+      logger.warn({ err: e instanceof Error ? e.message : String(e) }, "[STARTUP] Planner model validation error");
+    });
+  }, 1000);
+}
+
+startServer().catch((err) => {
+  logger.error({ err }, "FATAL: Server failed to start");
+  process.exit(1);
 });

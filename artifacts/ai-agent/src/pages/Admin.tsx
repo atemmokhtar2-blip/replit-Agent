@@ -6,12 +6,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  Users, Layout, ShieldCheck, Activity, KeyRound,
+  Users, Layout, ShieldCheck, Activity, KeyRound, MonitorCheck, BookOpen,
   CheckCircle2, XCircle, Loader2, RefreshCw, Copy, ExternalLink,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import { ProductionStatus } from "./admin/ProductionStatus";
+import { DeploymentGuide } from "./admin/DeploymentGuide";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -387,13 +389,21 @@ export default function Admin() {
       </div>
 
       <Tabs defaultValue="users" className="w-full">
-        <TabsList className="mb-4">
+        <TabsList className="mb-4 flex-wrap h-auto gap-1">
           <TabsTrigger value="users">Users</TabsTrigger>
           <TabsTrigger value="projects">Projects</TabsTrigger>
           <TabsTrigger value="audit">Audit Logs</TabsTrigger>
           <TabsTrigger value="authentication">
             <KeyRound className="h-3.5 w-3.5 mr-1.5" />
             Authentication
+          </TabsTrigger>
+          <TabsTrigger value="production-status">
+            <MonitorCheck className="h-3.5 w-3.5 mr-1.5" />
+            Production Status
+          </TabsTrigger>
+          <TabsTrigger value="deployment-guide">
+            <BookOpen className="h-3.5 w-3.5 mr-1.5" />
+            Deployment Guide
           </TabsTrigger>
         </TabsList>
 
@@ -484,6 +494,14 @@ export default function Admin() {
 
         <TabsContent value="authentication" className="p-1">
           <AuthSettingsTab />
+        </TabsContent>
+
+        <TabsContent value="production-status" className="p-1">
+          <ProductionStatus />
+        </TabsContent>
+
+        <TabsContent value="deployment-guide" className="p-1">
+          <DeploymentGuide />
         </TabsContent>
       </Tabs>
     </div>
