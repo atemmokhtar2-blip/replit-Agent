@@ -675,7 +675,6 @@ function ProviderCard({
 
 function ImportPanel({ onImported, initialRaw = "" }: { onImported: () => void; initialRaw?: string }) {
   const [raw, setRaw]                     = useState(initialRaw);
-  const [classified, setClassified]       = useState<ClassifiedKey[] | null>(null);
   const [isImporting, setIsImporting]     = useState(false);
   const [importResult, setImportResult]   = useState<ImportResult | null>(null);
   const [overrideSlug, setOverrideSlug]   = useState<string>("");
@@ -764,7 +763,7 @@ function ImportPanel({ onImported, initialRaw = "" }: { onImported: () => void; 
     }
   };
 
-  const clear = () => { setRaw(""); setClassified(null); setImportResult(null); };
+  const clear = () => { setRaw(""); setImportResult(null); };
 
   const unknownCount  = liveClassified?.filter(c => !c.providerSlug).length ?? 0;
   const duplicateCount = liveClassified?.filter(c => c.isDuplicate).length ?? 0;
@@ -1600,21 +1599,6 @@ export default function AIProvidersPage() {
     reader.readAsText(file);
   };
 
-  const handleRestoreFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      const text = ev.target?.result as string;
-      setImportInitialRaw(text);
-      setTab("import");
-      toast.info("File loaded", { description: "Review the keys below, then press Import." });
-    };
-    reader.readAsText(file);
-    // Reset so same file can be re-selected
-    e.target.value = "";
-  };
-
   const overallStatusColor = (() => {
     if (!health) return "text-muted-foreground";
     const rate = health.overallSuccess;
@@ -1625,7 +1609,8 @@ export default function AIProvidersPage() {
 
   const sortedProviders     = health?.providers.slice().sort((a, b) => a.priority - b.priority) ?? [];
   const currentActiveProvider = sortedProviders.find(p => p.enabled && p.activeKeys > 0);
-  const totalEnabledKeys    = health?.activeKeys ?? 0;
+  // Count ALL enabled keys (active + cooling + exhausted) — matches what validateAllKeys actually tests
+  const totalEnabledKeys    = sortedProviders.reduce((sum, p) => sum + p.keys.filter(k => k.enabled).length, 0);
 
   return (
     <div className="flex flex-col h-full overflow-hidden">

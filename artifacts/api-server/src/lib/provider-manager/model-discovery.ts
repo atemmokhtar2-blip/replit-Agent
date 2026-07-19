@@ -11,7 +11,7 @@
 import { db } from "@workspace/db";
 import { aiDiscoveredModelsTable, aiRequestLogTable } from "@workspace/db";
 import type { InsertAiDiscoveredModel } from "@workspace/db";
-import { eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import type { DiscoveredModel, ModelCategory, ProviderAdapter } from "./types.js";
 
 const REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 hours
@@ -65,7 +65,7 @@ function classifyOpenRouterModel(m: ORModel): DiscoveredModel {
   if (supportsVision) categories.push("vision");
   if (isLongCtx)   categories.push("long-context");
   if (isMultimodal) categories.push("multimodal");
-  if (categories.length === (isFree ? 1 : 1)) categories.push("general");  // only free/paid tag
+  if (categories.length === 1) categories.push("general");  // only free/paid tag — add "general" when no other classification
 
   // Ranking score (0-100)
   let score = 40;
@@ -309,16 +309,22 @@ export class ModelDiscoveryService {
   } = {}): Promise<{ models: typeof aiDiscoveredModelsTable.$inferSelect[]; total: number }> {
     const { providerSlug, onlyFree, onlyEnabled = true, limit = 100, offset = 0 } = opts;
 
-    const base = db.select().from(aiDiscoveredModelsTable);
-    const rows = await base;
+    // Push as much filtering as possible to SQL to avoid pulling thousands of rows into memory
+    const conditions: ReturnType<typeof eq>[] = [];
+    if (onlyEnabled)  conditions.push(eq(aiDiscoveredModelsTable.enabled, true));
+    if (onlyFree)     conditions.push(eq(aiDiscoveredModelsTable.isFree, true));
+    if (providerSlug) conditions.push(eq(aiDiscoveredModelsTable.providerSlug, providerSlug));
 
-    let filtered = rows;
-    if (providerSlug) filtered = filtered.filter(m => m.providerSlug === providerSlug);
-    if (onlyFree)     filtered = filtered.filter(m => m.isFree);
-    if (onlyEnabled)  filtered = filtered.filter(m => m.enabled);
-    if (opts.category) filtered = filtered.filter(m => (m.categories as string[] | null)?.includes(opts.category!));
+    const rows = await db.select()
+      .from(aiDiscoveredModelsTable)
+      .where(conditions.length > 0 ? and(...conditions) : undefined);
 
-    // Sort by rankScore desc, then by modelId asc
+    // Category filter uses JSONB array contains — done in JS since drizzle doesn't have a portable array-contains helper
+    let filtered = opts.category
+      ? rows.filter(m => (m.categories as string[] | null)?.includes(opts.category!))
+      : rows;
+
+    // Sort by rankScore desc, then by modelId asc for determinism
     filtered.sort((a, b) => (b.rankScore ?? 0) - (a.rankScore ?? 0) || a.modelId.localeCompare(b.modelId));
 
     const total = filtered.length;
@@ -327,11 +333,15 @@ export class ModelDiscoveryService {
   }
 
   async getBestModelForTask(taskType: string, preferFree = false): Promise<typeof aiDiscoveredModelsTable.$inferSelect | null> {
+    // Push filters to SQL — only pull enabled (and optionally free) rows
+    const conditions: ReturnType<typeof eq>[] = [eq(aiDiscoveredModelsTable.enabled, true)];
+    if (preferFree) conditions.push(eq(aiDiscoveredModelsTable.isFree, true));
+
     const all = await db.select().from(aiDiscoveredModelsTable)
-      .where(eq(aiDiscoveredModelsTable.enabled, true));
+      .where(and(...conditions))
+      .orderBy(desc(aiDiscoveredModelsTable.rankScore));
 
     let candidates = all;
-    if (preferFree) candidates = candidates.filter(m => m.isFree);
 
     if (taskType === "code-gen" || taskType === "debugging") {
       const coders = candidates.filter(m => (m.categories as string[] | null)?.includes("coding"));

@@ -6,8 +6,7 @@ import runtimeErrorOverlay from "@replit/vite-plugin-runtime-error-modal";
 
 const isBuild = process.argv.includes("build");
 
-// Use PORT env var if Replit provides one; fall back to 5000 for local dev.
-// Use || so an empty string also falls back (not just null/undefined).
+// Read PORT from env (artifact.toml injects PORT=5000); fall back to 5000 for local dev.
 const port = Number(process.env.PORT || "5000");
 
 if (!isBuild && (Number.isNaN(port) || port <= 0)) {

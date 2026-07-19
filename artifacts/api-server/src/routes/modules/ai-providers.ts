@@ -35,7 +35,7 @@ router.use(requireAuth);
 
 // ── GET /providers — list all providers with live health ─────────────────────
 
-router.get("/", async (_req, res) => {
+router.get("/", requireRole("admin"), async (_req, res) => {
   try {
     const report = providerManager.getHealthReport();
     res.json({ ok: true, data: report });
@@ -46,7 +46,7 @@ router.get("/", async (_req, res) => {
 
 // ── GET /providers/health — full health report ───────────────────────────────
 
-router.get("/health", async (_req, res) => {
+router.get("/health", requireRole("admin"), async (_req, res) => {
   try {
     const report = providerManager.getHealthReport();
     res.json({ ok: true, data: report });
@@ -80,7 +80,7 @@ router.get("/stats", async (_req, res) => {
 
 // ── GET /providers/requests — recent request log ─────────────────────────────
 
-router.get("/requests", async (req, res) => {
+router.get("/requests", requireRole("admin"), async (req, res) => {
   try {
     const limit  = Math.min(Number(req.query["limit"] ?? 50), 200);
     const rows   = await providerManager.getRecentRequests(limit);
@@ -142,7 +142,7 @@ router.post("/:slug/strategy", requireRole("admin"), validateBody(strategySchema
 
 // ── POST /providers/:slug/test — test connectivity ───────────────────────────
 
-router.post("/:slug/test", async (req, res) => {
+router.post("/:slug/test", requireRole("admin"), async (req, res) => {
   try {
     const result = await providerManager.testProvider(String(req.params["slug"]));
     res.json({ ok: true, data: result });
@@ -153,7 +153,7 @@ router.post("/:slug/test", async (req, res) => {
 
 // ── GET /providers/:slug/keys — list keys (masked, never plaintext) ──────────
 
-router.get("/:slug/keys", async (req, res) => {
+router.get("/:slug/keys", requireRole("admin"), async (req, res) => {
   try {
     const slug = String(req.params["slug"]);
     const report  = providerManager.getHealthReport();
@@ -231,7 +231,7 @@ router.delete("/:slug/keys/:id", requireRole("admin"), async (req, res) => {
 
 // ── POST /providers/:slug/keys/:id/test — test a specific key ───────────────
 
-router.post("/:slug/keys/:id/test", async (req, res) => {
+router.post("/:slug/keys/:id/test", requireRole("admin"), async (req, res) => {
   try {
     const result = await providerManager.testKey(String(req.params["id"]));
     res.json({ ok: true, data: result });
