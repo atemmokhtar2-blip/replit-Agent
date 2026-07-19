@@ -1288,6 +1288,85 @@ export class ProviderManager {
     return count;
   }
 
+  async moveKeys(keyIds: string[], targetSlug: string): Promise<number> {
+    const target = this.providers.get(targetSlug);
+    if (!target) throw new Error(`Provider not found: ${targetSlug}`);
+    const idSet = new Set(keyIds);
+    let count = 0;
+
+    for (const [slug, p] of this.providers.entries()) {
+      if (slug === targetSlug) continue;
+      for (let i = p.keys.length - 1; i >= 0; i--) {
+        const key = p.keys[i]!;
+        if (!idSet.has(key.id)) continue;
+
+        // Persist to DB first — only mutate runtime state if successful
+        await db.update(aiProviderKeysTable)
+          .set({ providerSlug: targetSlug, updatedAt: new Date() })
+          .where(eq(aiProviderKeysTable.id, key.id));
+
+        p.keys.splice(i, 1);
+        key.providerSlug = targetSlug;
+        target.keys.push(key);
+        count++;
+      }
+    }
+    return count;
+  }
+
+  async validateSelectedKeys(
+    keyIds: string[],
+    onProgress: (result: {
+      keyId: string; providerSlug: string; keyName: string; prefix: string;
+      ok: boolean; latencyMs: number; error?: string;
+    }) => void,
+    signal?: AbortSignal,
+    concurrency = 8,
+  ): Promise<{ total: number; passed: number; failed: number }> {
+    const idSet = new Set(keyIds);
+    const tasks: { key: RuntimeKeyState; providerSlug: string }[] = [];
+    for (const [slug, p] of this.providers.entries()) {
+      for (const k of p.keys) {
+        if (idSet.has(k.id)) tasks.push({ key: k, providerSlug: slug });
+      }
+    }
+    let passed = 0;
+    let failed = 0;
+    const queue = [...tasks];
+    let active  = 0;
+    await new Promise<void>((resolve) => {
+      const drain = () => {
+        while (active < concurrency && queue.length > 0) {
+          const task = queue.shift()!;
+          active++;
+          void this.testKey(task.key.id).then(result => {
+            onProgress({
+              keyId: task.key.id, providerSlug: task.providerSlug,
+              keyName: task.key.name, prefix: task.key.keyPrefix,
+              ok: result.ok, latencyMs: result.latencyMs, error: result.error,
+            });
+            if (result.ok) passed++; else failed++;
+          }).catch(() => {
+            onProgress({
+              keyId: task.key.id, providerSlug: task.providerSlug,
+              keyName: task.key.name, prefix: task.key.keyPrefix,
+              ok: false, latencyMs: 0, error: "validation error",
+            });
+            failed++;
+          }).finally(() => {
+            active--;
+            if (signal?.aborted) { resolve(); return; }
+            if (queue.length === 0 && active === 0) { resolve(); return; }
+            drain();
+          });
+        }
+      };
+      if (tasks.length === 0) { resolve(); return; }
+      drain();
+    });
+    return { total: tasks.length, passed, failed };
+  }
+
   // ── Cleanup operations ─────────────────────────────────────────────────────
 
   async deleteInvalidKeys(): Promise<number> {

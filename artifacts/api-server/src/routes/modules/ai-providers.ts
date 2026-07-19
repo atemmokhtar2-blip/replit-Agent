@@ -344,6 +344,64 @@ router.delete("/duplicates", requireRole("admin"), async (_req, res) => {
   }
 });
 
+// ── POST /providers/bulk/move — move selected keys to another provider ─────────
+
+const moveSchema = z.object({
+  keyIds:     z.array(z.string()).min(1).max(500),
+  targetSlug: z.string().min(1),
+});
+
+router.post("/bulk/move", requireRole("admin"), validateBody(moveSchema), async (req, res) => {
+  try {
+    const { keyIds, targetSlug } = req.body as { keyIds: string[]; targetSlug: string };
+    const count = await providerManager.moveKeys(keyIds, targetSlug);
+    res.json({ ok: true, data: { count } });
+  } catch (err) {
+    res.status(400).json({ ok: false, error: (err as Error).message });
+  }
+});
+
+// ── POST /providers/validate-selected/stream — SSE: validate specific keys ──────
+
+const validateSelectedSchema = z.object({
+  keyIds: z.array(z.string()).min(1).max(500),
+});
+
+router.post("/validate-selected/stream", requireRole("admin"), async (req, res) => {
+  res.setHeader("Content-Type",                "text/event-stream");
+  res.setHeader("Cache-Control",               "no-cache");
+  res.setHeader("Connection",                  "keep-alive");
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.flushHeaders();
+
+  const send = (event: string, data: unknown) => {
+    res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+  };
+
+  const parsed = validateSelectedSchema.safeParse(req.body);
+  if (!parsed.success) {
+    send("error", { message: "Invalid request" });
+    res.end();
+    return;
+  }
+
+  const abortCtrl = new AbortController();
+  res.on("close", () => abortCtrl.abort());
+
+  try {
+    const summary = await providerManager.validateSelectedKeys(
+      parsed.data.keyIds,
+      (result) => send("progress", result),
+      abortCtrl.signal,
+    );
+    send("done", summary);
+  } catch (err) {
+    send("error", { message: (err as Error).message });
+  } finally {
+    res.end();
+  }
+});
+
 // ── GET /providers/export — export key metadata (no plaintext) ────────────────
 
 router.get("/export", requireRole("admin"), async (_req, res) => {

@@ -608,8 +608,8 @@ function ProviderCard({
 
 // ── Import Panel ───────────────────────────────────────────────────────────────
 
-function ImportPanel({ onImported }: { onImported: () => void }) {
-  const [raw, setRaw]                     = useState("");
+function ImportPanel({ onImported, initialRaw = "" }: { onImported: () => void; initialRaw?: string }) {
+  const [raw, setRaw]                     = useState(initialRaw);
   const [classified, setClassified]       = useState<ClassifiedKey[] | null>(null);
   const [isImporting, setIsImporting]     = useState(false);
   const [importResult, setImportResult]   = useState<ImportResult | null>(null);
@@ -1062,12 +1062,21 @@ function BulkActionsBar({
   selectedIds,
   onClear,
   onDone,
+  providers,
 }: {
   selectedIds: string[];
   onClear: () => void;
   onDone: () => void;
+  providers: ProviderHealthReport[];
 }) {
   const qc = useQueryClient();
+  const [moveOpen,   setMoveOpen]   = useState(false);
+  const [moveTarget, setMoveTarget] = useState("");
+  const [valOpen,    setValOpen]    = useState(false);
+  const [valRunning, setValRunning] = useState(false);
+  const [valProgress, setValProgress] = useState<ValidationProgress[]>([]);
+  const [valSummary,  setValSummary]  = useState<ValidationSummary | null>(null);
+  const valCtrlRef = useRef<{ close: () => void } | null>(null);
 
   const bulk = useMutation({
     mutationFn: (action: "enable" | "disable" | "delete") =>
@@ -1083,30 +1092,181 @@ function BulkActionsBar({
     onError: (e) => toast.error((e as Error).message),
   });
 
+  const moveMut = useMutation({
+    mutationFn: () =>
+      apiFetch<{ data: { count: number } }>(`${BASE}/bulk/move`, {
+        method: "POST",
+        body: JSON.stringify({ keyIds: selectedIds, targetSlug: moveTarget }),
+      }),
+    onSuccess: (r) => {
+      toast.success(`Moved ${r.data.count} key(s) to ${moveTarget}`);
+      void qc.invalidateQueries({ queryKey: ["ai-providers-health"] });
+      setMoveOpen(false);
+      onDone();
+    },
+    onError: (e) => toast.error((e as Error).message),
+  });
+
+  const startValidateSelected = () => {
+    setValProgress([]);
+    setValSummary(null);
+    setValRunning(true);
+    setValOpen(true);
+    const token = localStorage.getItem("access_token") ?? "";
+    const ctrl  = new AbortController();
+    valCtrlRef.current = { close: () => ctrl.abort() };
+
+    void (async () => {
+      try {
+        const res = await fetch(`/api/v1/ai-providers/validate-selected/stream`, {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ keyIds: selectedIds }),
+          signal: ctrl.signal,
+        });
+        if (!res.ok || !res.body) throw new Error("Stream failed");
+        const reader  = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer    = "";
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? "";
+          for (const line of lines) {
+            if (line.startsWith("data: ")) {
+              try {
+                const data = JSON.parse(line.slice(6));
+                if ("total" in data) {
+                  setValSummary(data as ValidationSummary);
+                  void qc.invalidateQueries({ queryKey: ["ai-providers-health"] });
+                } else {
+                  setValProgress(prev => [...prev, data as ValidationProgress]);
+                }
+              } catch { /* skip */ }
+            }
+          }
+        }
+      } catch (err) {
+        if ((err as Error).name !== "AbortError") toast.error("Validation error: " + (err as Error).message);
+      } finally {
+        setValRunning(false);
+      }
+    })();
+  };
+
+  const stopValidate = () => {
+    valCtrlRef.current?.close();
+    setValRunning(false);
+  };
+
+  useEffect(() => () => { valCtrlRef.current?.close(); }, []);
+
   if (selectedIds.length === 0) return null;
 
+  const passed = valProgress.filter(p => p.ok).length;
+  const failed = valProgress.filter(p => !p.ok).length;
+  const valPct = selectedIds.length > 0 ? Math.round((valProgress.length / selectedIds.length) * 100) : 0;
+
   return (
-    <div className="sticky bottom-4 z-10 flex items-center gap-2 rounded-xl border border-violet-500/30 bg-card/95 backdrop-blur px-4 py-2.5 shadow-lg w-fit mx-auto">
-      <span className="text-xs text-violet-300 font-medium">
-        {selectedIds.length} key{selectedIds.length > 1 ? "s" : ""} selected
-      </span>
-      <div className="w-px h-4 bg-border mx-1" />
-      <Button size="sm" variant="ghost" className="h-7 text-xs text-emerald-400 hover:text-emerald-300"
-        onClick={() => bulk.mutate("enable")} disabled={bulk.isPending}>
-        <Wifi className="h-3 w-3 mr-1" /> Enable
-      </Button>
-      <Button size="sm" variant="ghost" className="h-7 text-xs text-amber-400 hover:text-amber-300"
-        onClick={() => bulk.mutate("disable")} disabled={bulk.isPending}>
-        <WifiOff className="h-3 w-3 mr-1" /> Disable
-      </Button>
-      <Button size="sm" variant="ghost" className="h-7 text-xs text-red-400 hover:text-red-300"
-        onClick={() => bulk.mutate("delete")} disabled={bulk.isPending}>
-        <Trash2 className="h-3 w-3 mr-1" /> Delete
-      </Button>
-      <div className="w-px h-4 bg-border mx-1" />
-      <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground" onClick={onClear}>
-        Cancel
-      </Button>
+    <div className="sticky bottom-4 z-10 flex flex-col items-center gap-2">
+      {/* Validate Selected results panel */}
+      {valOpen && (valProgress.length > 0 || valRunning) && (
+        <div className="rounded-xl border border-violet-500/20 bg-card/95 backdrop-blur p-4 shadow-lg w-full max-w-lg space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-muted-foreground">
+              {valRunning ? "Validating selected…" : "Validation complete"} · {valProgress.length}/{selectedIds.length}
+            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-emerald-400">{passed} OK</span>
+              {failed > 0 && <span className="text-red-400">{failed} failed</span>}
+              {valRunning && (
+                <Button size="sm" variant="ghost" className="h-5 px-2 text-xs text-muted-foreground" onClick={stopValidate}>
+                  <Square className="h-2.5 w-2.5 mr-1" /> Stop
+                </Button>
+              )}
+              {!valRunning && (
+                <Button size="sm" variant="ghost" className="h-5 px-2 text-xs text-muted-foreground" onClick={() => setValOpen(false)}>
+                  ✕
+                </Button>
+              )}
+            </div>
+          </div>
+          <Progress value={valPct} className="h-1" />
+          {valSummary && (
+            <p className="text-xs text-emerald-400 flex items-center gap-1">
+              <CheckCircle2 className="h-3 w-3" /> Done: {valSummary.passed} passed · {valSummary.failed} failed
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Move To Provider dialog */}
+      <Dialog open={moveOpen} onOpenChange={setMoveOpen}>
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader><DialogTitle>Move {selectedIds.length} key(s) to provider</DialogTitle></DialogHeader>
+          <div className="py-2 space-y-3">
+            <p className="text-xs text-muted-foreground">
+              Select the target provider. Keys will be reassigned immediately in the live pool.
+            </p>
+            <Select value={moveTarget} onValueChange={setMoveTarget}>
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue placeholder="Select provider…" />
+              </SelectTrigger>
+              <SelectContent>
+                {providers.map(p => (
+                  <SelectItem key={p.slug} value={p.slug} className="text-xs">
+                    {p.displayName}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" size="sm" onClick={() => setMoveOpen(false)}>Cancel</Button>
+            <Button size="sm" onClick={() => moveMut.mutate()} disabled={!moveTarget || moveMut.isPending}>
+              {moveMut.isPending ? "Moving…" : "Move Keys"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Main action bar */}
+      <div className="flex items-center gap-2 rounded-xl border border-violet-500/30 bg-card/95 backdrop-blur px-4 py-2.5 shadow-lg flex-wrap justify-center">
+        <span className="text-xs text-violet-300 font-medium">
+          {selectedIds.length} key{selectedIds.length > 1 ? "s" : ""} selected
+        </span>
+        <div className="w-px h-4 bg-border mx-1" />
+        <Button size="sm" variant="ghost" className="h-7 text-xs text-emerald-400 hover:text-emerald-300"
+          onClick={() => bulk.mutate("enable")} disabled={bulk.isPending}>
+          <Wifi className="h-3 w-3 mr-1" /> Enable
+        </Button>
+        <Button size="sm" variant="ghost" className="h-7 text-xs text-amber-400 hover:text-amber-300"
+          onClick={() => bulk.mutate("disable")} disabled={bulk.isPending}>
+          <WifiOff className="h-3 w-3 mr-1" /> Disable
+        </Button>
+        <Button size="sm" variant="ghost" className="h-7 text-xs text-red-400 hover:text-red-300"
+          onClick={() => bulk.mutate("delete")} disabled={bulk.isPending}>
+          <Trash2 className="h-3 w-3 mr-1" /> Delete
+        </Button>
+        <div className="w-px h-4 bg-border mx-1" />
+        <Button size="sm" variant="ghost" className="h-7 text-xs text-blue-400 hover:text-blue-300"
+          onClick={valRunning ? stopValidate : startValidateSelected}>
+          {valRunning
+            ? <><Square className="h-3 w-3 mr-1" /> Stop</>
+            : <><FlaskConical className="h-3 w-3 mr-1" /> Validate Selected</>
+          }
+        </Button>
+        <Button size="sm" variant="ghost" className="h-7 text-xs text-cyan-400 hover:text-cyan-300"
+          onClick={() => setMoveOpen(true)}>
+          <Layers className="h-3 w-3 mr-1" /> Move To Provider
+        </Button>
+        <div className="w-px h-4 bg-border mx-1" />
+        <Button size="sm" variant="ghost" className="h-7 text-xs text-muted-foreground" onClick={onClear}>
+          Cancel
+        </Button>
+      </div>
     </div>
   );
 }
@@ -1120,6 +1280,8 @@ export default function AIProvidersPage() {
   const { data: health, isLoading, refetch, isFetching } = useHealth();
   const [tab, setTab]         = useState<Tab>("providers");
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const [importInitialRaw, setImportInitialRaw] = useState("");
+  const restoreInputRef = useRef<HTMLInputElement>(null);
 
   const handleSelectKey = useCallback((id: string, checked: boolean) => {
     setSelectedKeys(prev => {
@@ -1172,6 +1334,43 @@ export default function AIProvidersPage() {
     }
   };
 
+  const handleBackup = async () => {
+    try {
+      const result = await apiFetch<{ data: object[] }>(`${BASE}/export`);
+      const payload = {
+        version: 1,
+        exportedAt: new Date().toISOString(),
+        keys: result.data,
+      };
+      const json = JSON.stringify(payload, null, 2);
+      const blob = new Blob([json], { type: "application/json" });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href     = url;
+      a.download = `ai-providers-backup-${new Date().toISOString().slice(0, 16).replace("T", "_")}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Backup downloaded", { description: "Upload this file with Restore to import the key list later." });
+    } catch (err) {
+      toast.error((err as Error).message);
+    }
+  };
+
+  const handleRestoreFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      setImportInitialRaw(text);
+      setTab("import");
+      toast.info("File loaded", { description: "Review the keys below, then press Import." });
+    };
+    reader.readAsText(file);
+    // Reset so same file can be re-selected
+    e.target.value = "";
+  };
+
   const overallStatusColor = (() => {
     if (!health) return "text-muted-foreground";
     const rate = health.overallSuccess;
@@ -1209,6 +1408,21 @@ export default function AIProvidersPage() {
             <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs" onClick={handleExport}>
               <Download className="h-3.5 w-3.5" /> Export
             </Button>
+            <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs" onClick={handleBackup}>
+              <Download className="h-3.5 w-3.5" /> Backup
+            </Button>
+            <label>
+              <input
+                type="file"
+                accept=".txt,.json,.csv,.env,text/plain"
+                className="sr-only"
+                ref={restoreInputRef}
+                onChange={handleRestoreFile}
+              />
+              <Button size="sm" variant="outline" className="gap-1.5 h-8 text-xs cursor-pointer" asChild>
+                <span><Upload className="h-3.5 w-3.5" /> Restore</span>
+              </Button>
+            </label>
             <Button
               size="sm" variant="outline"
               className="gap-1.5 h-8 text-xs text-amber-400 hover:text-amber-300 border-amber-500/30"
@@ -1329,7 +1543,11 @@ export default function AIProvidersPage() {
 
         {/* ── Import tab ────────────────────────────────────────────────────── */}
         {tab === "import" && (
-          <ImportPanel onImported={() => setTab("providers")} />
+          <ImportPanel
+            key={importInitialRaw}
+            initialRaw={importInitialRaw}
+            onImported={() => { setTab("providers"); setImportInitialRaw(""); }}
+          />
         )}
 
         {/* ── Request log tab ───────────────────────────────────────────────── */}
@@ -1356,6 +1574,7 @@ export default function AIProvidersPage() {
         selectedIds={[...selectedKeys]}
         onClear={clearSelection}
         onDone={clearSelection}
+        providers={sortedProviders}
       />
     </div>
   );

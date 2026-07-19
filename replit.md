@@ -66,6 +66,23 @@ A professional AI-powered development platform where users describe software the
 - Vite config must guard `process.env.PORT` / `BASE_PATH` with an `isBuild` flag to avoid CI build failures
 - `Start Backend` workflow must NOT use `waitForPort = 8080` — platform port detection for this port is unreliable; always set `PORT=8080` explicitly in the workflow args
 
+## Admin
+
+- Admin account: `atemmokhtar2@gmail.com` / role: `super_admin` (password set at setup — use forgot-password flow to reset)
+- Admin panel: `/admin` — user management, auth providers, audit logs
+- AI Providers Manager: `/ai-providers` — bulk key import, pool management, validation, routing
+
+## AI Providers Manager
+
+- Full bulk key paste (hundreds at once), auto-classifies by prefix into OpenRouter/Gemini/OpenAI/Groq/xAI/etc.
+- Validate All (SSE stream, background, parallel concurrency-8) + Validate Selected for a subset
+- Move To Provider — reassign selected keys to a different provider pool instantly (no restart needed)
+- Backup (download JSON snapshot) + Restore (upload text file → auto-populates Import panel)
+- Export/Import/Delete Invalid/Delete Duplicates buttons
+- Routing strategies per provider: Round Robin, Least Used, Fastest Response, Random, Priority, Least Failures
+- Per-key stats: requests, success rate, avg latency, last used, consecutive failures, errors
+- Keys stored AES-256-GCM encrypted; only last 4 chars shown in UI
+
 ## User preferences
 
 _Populate as you build — explicit user instructions worth remembering across sessions._
