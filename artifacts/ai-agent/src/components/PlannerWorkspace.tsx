@@ -29,6 +29,7 @@ import { useTaskActions, useTaskStore, DEFAULT_EXEC_PHASES, DEFAULT_VERIFY_CHECK
 import type { ExecutionTask, VerificationCheck, HealthReport, ProductionGate } from "@/lib/task-store";
 import type { StageState } from "./design-system/AgentTimeline";
 import { MarkdownRenderer } from "./chat/MarkdownRenderer";
+import { StreamingRenderer } from "./chat/StreamingRenderer";
 import type { LogEntry } from "./chat/LiveLogPanel";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -232,20 +233,29 @@ function AssistantBubble({
   );
 }
 
-// ── Typing indicator (3 dots) ──────────────────────────────────────────────────
+// ── Typing / Thinking indicator ────────────────────────────────────────────────
 
-function TypingBubble() {
+function TypingBubble({ stageName }: { stageName?: string }) {
   return (
     <div className="flex gap-3 items-start">
       <AssistantAvatar />
       <div className="flex items-center gap-[5px] pt-[10px]">
-        {[0, 200, 400].map((delay) => (
-          <span
-            key={delay}
-            className="h-[7px] w-[7px] rounded-full bg-foreground/20 animate-bounce"
-            style={{ animationDelay: `${delay}ms`, animationDuration: "1.3s" }}
-          />
-        ))}
+        {stageName ? (
+          <>
+            <span className="h-[6px] w-[6px] rounded-full bg-primary/50 animate-pulse flex-shrink-0" />
+            <span className="text-[0.78rem] text-muted-foreground/45 animate-pulse select-none">
+              {stageName}…
+            </span>
+          </>
+        ) : (
+          [0, 200, 400].map((delay) => (
+            <span
+              key={delay}
+              className="h-[7px] w-[7px] rounded-full bg-foreground/20 animate-bounce"
+              style={{ animationDelay: `${delay}ms`, animationDuration: "1.3s" }}
+            />
+          ))
+        )}
       </div>
     </div>
   );
@@ -439,6 +449,14 @@ export function PlannerWorkspace({
   const priorMessageCountRef = useRef(messages.length);
   const blueprintRef = useRef<string>("");
 
+  // ── Token batching — buffer tokens and flush every animation frame ───────────
+  // Prevents 100s of setState/sec; merges all tokens arriving within one frame
+  const pendingTokensRef = useRef<string>("");
+  const flushRafRef = useRef<number | null>(null);
+
+  // ── Back-to-latest scroll button ─────────────────────────────────────────────
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
+
   const renameMutation = useRenameConversation();
 
   const { tasks } = useTaskStore();
@@ -493,6 +511,8 @@ export function PlannerWorkspace({
     if (!el) return;
     const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
     userScrolledRef.current = !atBottom;
+    // Show "back to latest" button only when streaming and user has scrolled up
+    setShowScrollBtn(!atBottom && (isStreaming || phase.kind === "executing" || phase.kind === "verifying"));
   };
 
   // ── Textarea auto-resize ─────────────────────────────────────────────────────
@@ -685,6 +705,12 @@ export function PlannerWorkspace({
   const handleStop = useCallback(() => {
     abortRef.current?.abort();
     execAbortRef.current?.abort();
+    // Cancel any pending token flush
+    if (flushRafRef.current !== null) {
+      cancelAnimationFrame(flushRafRef.current);
+      flushRafRef.current = null;
+    }
+    pendingTokensRef.current = "";
     setIsStreaming(false);
     setExecActive(false);
     setStreamingContent("");
@@ -693,6 +719,7 @@ export function PlannerWorkspace({
     setThinkingModel("");
     setThinkingStreaming(false);
     setActiveModelSwitch(null);
+    setShowScrollBtn(false);
     setPhase({ kind: "idle" });
     toast.info("توقف التوليد");
   }, []);
@@ -767,7 +794,18 @@ export function PlannerWorkspace({
           break;
 
         case "content_chunk":
-          setStreamingContent((prev) => prev + event.text);
+          // Buffer token and flush on next animation frame — batches all tokens
+          // arriving within one frame (~16ms) into a single setState call
+          pendingTokensRef.current += event.text;
+          if (flushRafRef.current === null) {
+            flushRafRef.current = requestAnimationFrame(() => {
+              flushRafRef.current = null;
+              const text = pendingTokensRef.current;
+              if (!text) return;
+              pendingTokensRef.current = "";
+              setStreamingContent((prev) => prev + text);
+            });
+          }
           break;
 
         case "section_detected":
@@ -778,8 +816,12 @@ export function PlannerWorkspace({
           blueprintRef.current = event.content;
           const elapsedMs = Date.now() - plannerStartRef.current;
           completeTask(taskId, event.content, event.model);
+          // Discard pending token buffer — final content comes from event.content
+          if (flushRafRef.current !== null) { cancelAnimationFrame(flushRafRef.current); flushRafRef.current = null; }
+          pendingTokensRef.current = "";
           setStreamingContent("");
           setStreamingStage(null);
+          setShowScrollBtn(false);
           setPhase({ kind: "done_blueprint", taskId, userMessage: content, elapsedMs });
           setIsStreaming(false);
 
@@ -799,8 +841,11 @@ export function PlannerWorkspace({
         }
 
         case "conversation": {
+          if (flushRafRef.current !== null) { cancelAnimationFrame(flushRafRef.current); flushRafRef.current = null; }
+          pendingTokensRef.current = "";
           setStreamingContent("");
           setStreamingStage(null);
+          setShowScrollBtn(false);
           setPhase({ kind: "done_conversation", content: event.content, userMessage: content });
           setIsStreaming(false);
           queryClient.invalidateQueries({ queryKey: getGetConversationQueryKey(conversationId) });
@@ -817,8 +862,11 @@ export function PlannerWorkspace({
 
         case "error":
           failTask(taskId, event.message);
+          if (flushRafRef.current !== null) { cancelAnimationFrame(flushRafRef.current); flushRafRef.current = null; }
+          pendingTokensRef.current = "";
           setStreamingContent("");
           setStreamingStage(null);
+          setShowScrollBtn(false);
           setPhase({ kind: "error", message: event.message, userMessage: content });
           setIsStreaming(false);
           break;
@@ -904,12 +952,14 @@ export function PlannerWorkspace({
             <UserBubble content={phase.userMessage} />
             {streamingContent ? (
               <AssistantBubble>
-                <MarkdownRenderer content={streamingContent} />
-                {/* Blinking cursor */}
-                <span className="inline-block w-[2px] h-[1em] bg-foreground/35 ml-0.5 animate-pulse align-text-bottom rounded-sm" />
+                <StreamingRenderer
+                  content={streamingContent}
+                  isStreaming
+                  className="streaming-bubble-enter"
+                />
               </AssistantBubble>
             ) : (
-              <TypingBubble />
+              <TypingBubble stageName={streamingStage?.name} />
             )}
           </>
         );
@@ -1042,11 +1092,12 @@ export function PlannerWorkspace({
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
 
         {/* ── Messages area ────────────────────────────────────────────────── */}
-        <div
-          ref={scrollContainerRef}
-          onScroll={handleScroll}
-          className="flex-1 overflow-y-auto scroll-smooth"
-        >
+        <div className="flex-1 relative overflow-hidden">
+          <div
+            ref={scrollContainerRef}
+            onScroll={handleScroll}
+            className="h-full overflow-y-auto scroll-smooth"
+          >
           <div className="mx-auto max-w-2xl px-4 py-8 flex flex-col gap-7">
             {renderHistory()}
             {renderPhase()}
@@ -1075,7 +1126,27 @@ export function PlannerWorkspace({
 
             <div ref={messagesEndRef} />
           </div>
-        </div>
+          </div>{/* end scrollable */}
+
+          {/* ── Back-to-latest button ─────────────────────────────────────── */}
+          {showScrollBtn && (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 pointer-events-none">
+              <button
+                className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-border/60 bg-background/90 backdrop-blur-sm px-3.5 py-1.5 text-[11px] text-muted-foreground hover:text-foreground shadow-lg transition-all hover:border-primary/30 hover:bg-muted/30"
+                onClick={() => {
+                  userScrolledRef.current = false;
+                  setShowScrollBtn(false);
+                  messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+                }}
+              >
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M1.5 3.5L5 7L8.5 3.5" />
+                </svg>
+                آخر رسالة
+              </button>
+            </div>
+          )}
+        </div>{/* end messages wrapper */}
 
         {/* ── Input area ───────────────────────────────────────────────────── */}
         <div
